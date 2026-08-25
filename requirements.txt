@@ -1,0 +1,28 @@
+# Núcleo (sem GPU) — pipeline de dados, assistente e testes
+faker
+pandas
+scikit-learn
+pytest
+
+# Assistente: LangChain + LangGraph
+langchain>=0.2
+langchain-community
+langgraph
+
+# RAG (Etapa 3)
+faiss-cpu
+
+# Fine-tuning (Etapa 2) — requer GPU (Colab/Kaggle). Ver finetuning/README.md.
+torch
+transformers
+peft
+trl
+bitsandbytes
+accelerate
+datasets
+rouge-score
+evaluate
+
+# Anonimização avançada (opcional, Etapa 1)
+# spacy
+# presidio-analyzer

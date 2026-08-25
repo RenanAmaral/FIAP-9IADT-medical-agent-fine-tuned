@@ -1,0 +1,25 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Modelos e artefatos pesados (gerados localmente/no Colab, não versionados)
+finetuning/adapters/
+finetuning/outputs/
+*.gguf
+*.safetensors
+*.bin
+
+# Bancos e índices locais gerados em runtime
+assistant/*.db
+assistant/vector_store/
+*.faiss
+*.index
+
+# Logs de auditoria em runtime (mantemos apenas .gitkeep)
+logs/*.jsonl
+logs/*.log
+
+.env
+.DS_Store

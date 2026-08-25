@@ -1,0 +1,31 @@
+{
+  "seed": 42,
+  "qa_pairs_generated": 120,
+  "qa_pairs_after_clean": {
+    "input_count": 120,
+    "output_count": 92,
+    "duplicates_removed": 28
+  },
+  "hospital_records_generated": 80,
+  "hospital_records_after_clean": {
+    "input_count": 80,
+    "output_count": 80,
+    "duplicates_removed": 0
+  },
+  "anonymization_validation": {
+    "pii_values_checked": 560,
+    "pii_values_leaked": 0,
+    "recall": 1.0
+  },
+  "curation_filter_stats": {
+    "input_count": 92,
+    "dropped_incomplete": 0,
+    "dropped_too_long": 0,
+    "kept_after_filter": 92
+  },
+  "final_split_sizes": {
+    "train": 59,
+    "val": 8,
+    "test": 8
+  }
+}
