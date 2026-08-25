@@ -7,7 +7,7 @@
 ## Progresso
 
 - [x] Etapa 1 — Preparação dos dados (`preprocessing/`, `data/`)
-- [ ] Etapa 2 — Fine-tuning da LLM (`finetuning/`)
+- [x] Etapa 2 — Fine-tuning da LLM (`finetuning/`)
 - [ ] Etapa 3 — Assistente com LangChain (`assistant/`)
 - [ ] Etapa 4 — Fluxos automatizados com LangGraph (`graphs/`)
 - [ ] Etapa 5 — Segurança, logging e explainability (`security/`, `logs/`)
