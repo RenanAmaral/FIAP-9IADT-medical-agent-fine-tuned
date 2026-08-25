@@ -1,0 +1,173 @@
+{
+  "n_queries": 15,
+  "k": 3,
+  "top1_accuracy": 0.9333,
+  "recall_at_3": 1.0,
+  "details": [
+    {
+      "pergunta": "paciente com pressão alta, quais exames solicitar?",
+      "esperado": "PROT-CARD-001",
+      "recuperados": [
+        "PROT-CARD-001",
+        "PROT-CARD-001",
+        "PROT-END-001"
+      ],
+      "top1_correto": true,
+      "recall_at_3": true
+    },
+    {
+      "pergunta": "escore CHA2DS2-VASc anticoagulação fibrilação atrial",
+      "esperado": "PROT-CARD-002",
+      "recuperados": [
+        "PROT-CARD-002",
+        "PROT-CARD-002",
+        "PROT-PNE-001"
+      ],
+      "top1_correto": true,
+      "recall_at_3": true
+    },
+    {
+      "pergunta": "qual meta de hemoglobina glicada no diabetes tipo 2",
+      "esperado": "PROT-END-001",
+      "recuperados": [
+        "PROT-END-001",
+        "PROT-END-001",
+        "PROT-GIN-001"
+      ],
+      "top1_correto": true,
+      "recall_at_3": true
+    },
+    {
+      "pergunta": "escore CURB-65 para pneumonia adquirida na comunidade",
+      "esperado": "PROT-PNE-001",
+      "recuperados": [
+        "PROT-PNE-001",
+        "PROT-PNE-001",
+        "PROT-CARD-002"
+      ],
+      "top1_correto": true,
+      "recall_at_3": true
+    },
+    {
+      "pergunta": "exacerbação de DPOC, alvo de saturação de oxigênio",
+      "esperado": "PROT-PNE-002",
+      "recuperados": [
+        "PROT-PNE-002",
+        "PROT-PNE-002",
+        "PROT-CARD-001"
+      ],
+      "top1_correto": true,
+      "recall_at_3": true
+    },
+    {
+      "pergunta": "paciente com déficit neurológico agudo, janela de trombólise",
+      "esperado": "PROT-NEU-001",
+      "recuperados": [
+        "PROT-NEU-001",
+        "PROT-NEU-001",
+        "PROT-ORT-001"
+      ],
+      "top1_correto": true,
+      "recall_at_3": true
+    },
+    {
+      "pergunta": "sinais de sepse e pacote de 1 hora",
+      "esperado": "PROT-INF-001",
+      "recuperados": [
+        "PROT-INF-001",
+        "PROT-PED-001",
+        "PROT-PNE-001"
+      ],
+      "top1_correto": true,
+      "recall_at_3": true
+    },
+    {
+      "pergunta": "febre em lactente menor de 3 meses",
+      "esperado": "PROT-PED-001",
+      "recuperados": [
+        "PROT-PED-001",
+        "PROT-PED-001",
+        "PROT-END-001"
+      ],
+      "top1_correto": true,
+      "recall_at_3": true
+    },
+    {
+      "pergunta": "rastreamento de diabetes gestacional no pré-natal",
+      "esperado": "PROT-GIN-001",
+      "recuperados": [
+        "PROT-GIN-001",
+        "PROT-END-001",
+        "PROT-END-001"
+      ],
+      "top1_correto": true,
+      "recall_at_3": true
+    },
+    {
+      "pergunta": "dor lombar aguda, preciso pedir ressonância?",
+      "esperado": "PROT-ORT-001",
+      "recuperados": [
+        "PROT-ORT-001",
+        "PROT-PNE-002",
+        "PROT-PNE-002"
+      ],
+      "top1_correto": true,
+      "recall_at_3": true
+    },
+    {
+      "pergunta": "quando internar um paciente com pneumonia",
+      "esperado": "PROT-PNE-001",
+      "recuperados": [
+        "PROT-PNE-001",
+        "PROT-PNE-001",
+        "PROT-CARD-001"
+      ],
+      "top1_correto": true,
+      "recall_at_3": true
+    },
+    {
+      "pergunta": "primeira linha de tratamento para hipertensão",
+      "esperado": "PROT-CARD-001",
+      "recuperados": [
+        "PROT-CARD-001",
+        "PROT-END-001",
+        "PROT-CARD-001"
+      ],
+      "top1_correto": true,
+      "recall_at_3": true
+    },
+    {
+      "pergunta": "critérios de encaminhamento para endocrinologia",
+      "esperado": "PROT-END-001",
+      "recuperados": [
+        "PROT-END-001",
+        "PROT-INF-001",
+        "PROT-END-001"
+      ],
+      "top1_correto": true,
+      "recall_at_3": true
+    },
+    {
+      "pergunta": "sinais de alarme na gestação",
+      "esperado": "PROT-GIN-001",
+      "recuperados": [
+        "PROT-PED-001",
+        "PROT-ORT-001",
+        "PROT-GIN-001"
+      ],
+      "top1_correto": false,
+      "recall_at_3": true
+    },
+    {
+      "pergunta": "red flags na lombalgia",
+      "esperado": "PROT-ORT-001",
+      "recuperados": [
+        "PROT-ORT-001",
+        "PROT-GIN-001",
+        "PROT-CARD-001"
+      ],
+      "top1_correto": true,
+      "recall_at_3": true
+    }
+  ]
+}
