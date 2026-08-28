@@ -114,6 +114,24 @@ fluxo continua — apenas com o aviso e sujeito ao limite de taxa.
 Um notebook pronto com essas células está em
 `finetuning/notebooks/colab_finetune.ipynb`.
 
+### Atualizando um notebook já aberto no Colab
+
+São **duas** coisas independentes, e confundi-las é a causa mais comum de
+"corrigi o bug mas o erro continua":
+
+| O que | Como atualizar |
+|---|---|
+| **O notebook** (`.ipynb`) | O Colab carregou um snapshot do GitHub e não o atualiza sozinho. *File > Open notebook > GitHub* e abra o arquivo novamente. Cópias salvas no Drive são arquivos separados e não recebem as atualizações. |
+| **O código clonado em `/content/`** | É o que de fato roda. A célula de clone do notebook é idempotente: se o diretório já existe, ela faz `git pull` em vez de falhar. Basta executá-la de novo. |
+
+Rodar `!git clone` uma segunda vez falha com *"destination path already
+exists"* — por isso a célula testa a existência do diretório antes. Ela também
+imprime o commit atual (`git log --oneline -1`), útil para confirmar que a
+versão carregada é a esperada.
+
+Em caso de dúvida, *Runtime > Disconnect and delete runtime* e rodar tudo do
+zero recria a máquina limpa, com clone atualizado.
+
 ## Modelo base
 
 Padrão: `TinyLlama/TinyLlama-1.1B-Chat-v1.0` — recomendado no próprio
