@@ -32,8 +32,21 @@ def _load_pipeline(base_model: str, adapter_dir: str | None):
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
+    from finetuning.hf_auth import dtype_kwarg, ensure_hf_login
+
+    ensure_hf_login(verbose=False)
+
     tokenizer = AutoTokenizer.from_pretrained(base_model)
-    model = AutoModelForCausalLM.from_pretrained(base_model, device_map="auto")
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    # Em GPU usamos fp16: para inferência a precisão extra do fp32 não muda o
+    # resultado de forma relevante, mas dobra a memória e o tempo de geração.
+    model = AutoModelForCausalLM.from_pretrained(
+        base_model,
+        device_map="auto",
+        **dtype_kwarg(torch.float16 if torch.cuda.is_available() else torch.float32),
+    )
     if adapter_dir:
         model = PeftModel.from_pretrained(model, adapter_dir)
     model.eval()

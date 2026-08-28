@@ -16,6 +16,31 @@ LLM exige as duas coisas. Por isso:
 - O treinamento real deve ser feito no **Google Colab** ou **Kaggle**
   (sugestão do próprio enunciado), seguindo os passos abaixo.
 
+## Token da Hugging Face
+
+Sem um token, os downloads da Hub são anônimos e compartilham o limite de taxa
+do IP — no Colab, isso significa dividir a cota com todos os outros notebooks
+que saem pelo mesmo IP. É a origem do aviso:
+
+```
+Warning: You are sending unauthenticated requests to the HF Hub.
+```
+
+O download de modelos públicos ainda funciona, mas fica mais lento e pode
+falhar com HTTP 429 no meio de um arquivo de vários GB. Para modelos de
+licença restrita (Llama 3, Gemma), o token é **obrigatório**.
+
+Crie um token de leitura em https://huggingface.co/settings/tokens e:
+
+- **No Colab:** abra **Secrets** (🔑), adicione `HF_TOKEN` e ative
+  *Notebook access*.
+- **Localmente:** `export HF_TOKEN=hf_xxx`
+
+`finetuning/hf_auth.py` detecta o token automaticamente (variável de
+ambiente, secrets do Colab ou login já persistido) e é chamado por `train.py`,
+`evaluate.py` e `assistant/llm.py` antes de qualquer download. Sem token, o
+fluxo continua — apenas com o aviso e sujeito ao limite de taxa.
+
 ## Como rodar no Google Colab
 
 1. Abra um notebook com GPU (Runtime > Change runtime type > GPU, T4 é
@@ -31,9 +56,7 @@ LLM exige as duas coisas. Por isso:
    ```
 4. Treine:
    ```bash
-   !python -m finetuning.train \
-       --base-model TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
-       --epochs 3 --batch-size 4 --lora-r 16
+   !python -m finetuning.train --base-model TinyLlama/TinyLlama-1.1B-Chat-v1.0
    ```
 5. Avalie (métricas quantitativas + comparação antes/depois):
    ```bash
@@ -63,16 +86,60 @@ dependendo da GPU disponível.
 | Parâmetro | Padrão | Flag |
 |---|---|---|
 | Learning rate | 2e-4 | `--learning-rate` |
-| Épocas | 3 | `--epochs` |
+| Épocas | 12 | `--epochs` |
 | Batch size (por device) | 4 | `--batch-size` |
-| Gradient accumulation | 4 | `--grad-accum` |
+| Gradient accumulation | 1 | `--grad-accum` |
 | LoRA r | 16 | `--lora-r` |
 | LoRA alpha | 32 | `--lora-alpha` |
 | Quantização | 4-bit (QLoRA) | `--no-4bit` desativa |
 
+### Por que 12 épocas e não 3
+
+O dataset tem ~59 exemplos de treino. Com o padrão inicial (3 épocas, batch
+efetivo 16) o treino rendia apenas **~9 atualizações de peso** — os adapters
+LoRA mal saíam da inicialização e o modelo treinado ficaria indistinguível do
+base na avaliação, esvaziando a comparação antes/depois que o relatório
+precisa mostrar.
+
+Com batch efetivo 4 e 12 épocas são **~168 atualizações**, e o treino ainda
+leva poucos minutos numa T4. O script imprime o plano antes de começar e
+avisa se o número de passos cair abaixo do útil:
+
+```
+[plano] 59 exemplos | batch efetivo 4 | 14 passos/época × 12 épocas = ~168 atualizações de peso
+```
+
 Todos os hiperparâmetros efetivamente usados e as métricas de treino/
 avaliação são salvos em `finetuning/adapters/<nome>/hyperparameters.json`
 ao final do treino (item 7 do passo a passo).
+
+## Compatibilidade entre versões de `trl` / `transformers`
+
+O treino roda no Colab/Kaggle, onde as versões das bibliotecas mudam sem aviso
+e sem que possamos fixá-las. Alguns parâmetros foram renomeados entre versões,
+e passar o nome errado derruba o script **depois** de já ter baixado
+gigabytes de pesos:
+
+| Nome canônico no projeto | Nome alternativo | Onde mudou |
+|---|---|---|
+| `max_length` | `max_seq_length` | `SFTConfig`, trl < 0.20 |
+| `warmup_ratio` | `warmup_steps` (aceita float como proporção) | transformers 5.x |
+| `eval_strategy` | `evaluation_strategy` | transformers < 4.41 |
+| `dtype` | `torch_dtype` | transformers 5.0 |
+
+`resolve_config_kwargs` (em `train.py`) e `dtype_kwarg` (em `hf_auth.py`)
+resolvem esses nomes **em runtime**, inspecionando o que a versão instalada
+aceita. Um parâmetro sem correspondência é descartado com aviso em vez de
+interromper o treino — perder um hiperparâmetro secundário é preferível a
+perder a execução inteira.
+
+O caso do `dtype` merece atenção especial: como `from_pretrained` recebe
+`**kwargs`, passar o nome errado **não levanta erro** — em transformers 4.x um
+`dtype=` seria simplesmente ignorado e o modelo carregaria em fp32, o dobro da
+memória e cerca de metade da velocidade, sem nenhum sinal de que algo deu
+errado. Por isso a escolha é feita pelo número de versão, não por tentativa.
+
+`tests/test_finetuning_compat.py` cobre as duas convenções de API.
 
 ## Contrato de prompt (`finetuning/config.py`)
 

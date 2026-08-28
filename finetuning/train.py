@@ -21,8 +21,8 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 from finetuning.config import LoraParams, TrainingConfig
 from finetuning.dataset import load_training_dataset
@@ -54,6 +54,109 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "a pipeline (tokenização, LoRA, treino, salvamento) executa sem erro.",
     )
     return parser
+
+
+#: Aliases de parâmetros que mudaram de nome entre versões de `trl` /
+#: `transformers`. Chave = nome canônico usado neste projeto; valor = nomes
+#: alternativos aceitos por outras versões, em ordem de preferência.
+#:
+#: Isto existe porque o treino roda no Colab/Kaggle, onde as versões das
+#: bibliotecas mudam sem aviso e sem que possamos fixá-las. Sem essa
+#: resolução, uma atualização do `trl` derruba o script com
+#: `TypeError: unexpected keyword argument`, no meio de um notebook, depois
+#: de já ter baixado 2 GB de pesos.
+#:
+#: Casos conhecidos:
+#: - `max_length`: chamava-se `max_seq_length` em trl < 0.20.
+#: - `warmup_ratio`: removido em transformers 5.x, onde `warmup_steps` aceita
+#:   um float em [0, 1) com a mesma semântica de proporção.
+#: - `eval_strategy`: chamava-se `evaluation_strategy` em transformers < 4.41.
+PARAM_ALIASES: dict[str, tuple[str, ...]] = {
+    "max_length": ("max_seq_length",),
+    "warmup_ratio": ("warmup_steps",),
+    "eval_strategy": ("evaluation_strategy",),
+}
+
+
+def _accepted_field_names(config_cls) -> set[str]:
+    """Nomes de parâmetro que a classe de configuração aceita nesta versão."""
+    import dataclasses
+    import inspect
+
+    if dataclasses.is_dataclass(config_cls):
+        names = {f.name for f in dataclasses.fields(config_cls) if f.init}
+        if names:
+            return names
+
+    # Fallback para versões que não expõem a config como dataclass.
+    return set(inspect.signature(config_cls.__init__).parameters) - {"self", "kwargs"}
+
+
+def resolve_config_kwargs(
+    config_cls, desired: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """Traduz `desired` para os nomes que `config_cls` aceita nesta versão.
+
+    Devolve `(kwargs_resolvidos, avisos)`. Um parâmetro sem correspondência é
+    descartado e reportado no aviso, em vez de derrubar o treino — perder um
+    hiperparâmetro secundário é preferível a perder a execução inteira.
+    """
+    accepted = _accepted_field_names(config_cls)
+    resolved: dict[str, Any] = {}
+    warnings: list[str] = []
+
+    for name, value in desired.items():
+        if name in accepted:
+            resolved[name] = value
+            continue
+
+        for alias in PARAM_ALIASES.get(name, ()):
+            if alias in accepted:
+                resolved[alias] = value
+                warnings.append(f"'{name}' não existe nesta versão; usando '{alias}'.")
+                break
+        else:
+            warnings.append(
+                f"'{name}' não é aceito por {config_cls.__name__} nesta versão "
+                "e foi ignorado."
+            )
+
+    return resolved, warnings
+
+
+def build_sft_config(config_cls, desired: dict[str, Any]):
+    kwargs, warnings = resolve_config_kwargs(config_cls, desired)
+    for message in warnings:
+        print(f"[compat] {message}")
+    return config_cls(**kwargs)
+
+
+#: Abaixo disto os adapters LoRA praticamente não saem da inicialização e a
+#: comparação antes/depois do relatório não mostra diferença nenhuma.
+MIN_USEFUL_OPTIMIZER_STEPS = 50
+
+
+def _report_training_plan(config: TrainingConfig, n_train: int) -> None:
+    """Imprime o plano de treino e alerta se ele for curto demais para
+    produzir um modelo mensuravelmente diferente do base."""
+    effective_batch = config.per_device_train_batch_size * config.gradient_accumulation_steps
+    steps_per_epoch = max(1, n_train // effective_batch)
+    total_steps = steps_per_epoch * config.num_train_epochs
+
+    print(
+        f"[plano] {n_train} exemplos | batch efetivo {effective_batch} | "
+        f"{steps_per_epoch} passos/época × {config.num_train_epochs} épocas = "
+        f"~{total_steps} atualizações de peso"
+    )
+
+    if total_steps < MIN_USEFUL_OPTIMIZER_STEPS:
+        print(
+            f"[aviso] Apenas ~{total_steps} atualizações de peso. Com tão poucos "
+            "passos os adapters LoRA mal saem da inicialização e o modelo "
+            "treinado tende a ficar indistinguível do base na avaliação.\n"
+            "        Aumente --epochs ou reduza --grad-accum. Como o dataset é "
+            "pequeno, treinar mais custa poucos minutos."
+        )
 
 
 def build_config_from_args(args: argparse.Namespace) -> TrainingConfig:
@@ -90,6 +193,9 @@ def run_training(config: TrainingConfig, smoke_test: bool = False) -> dict:
     train_records = load_training_dataset(config.train_file)
     val_records = load_training_dataset(config.val_file) if Path(config.val_file).exists() else []
 
+    if not smoke_test:
+        _report_training_plan(config, len(train_records))
+
     if smoke_test:
         from transformers import GPT2Config, GPT2LMHeadModel, GPT2TokenizerFast
         from tokenizers import ByteLevelBPETokenizer
@@ -117,6 +223,12 @@ def run_training(config: TrainingConfig, smoke_test: bool = False) -> dict:
         )
         quantization_config = None
     else:
+        # Autentica antes de qualquer download, para não esbarrar no limite
+        # de taxa anônimo no meio de um arquivo de pesos de vários GB.
+        from finetuning.hf_auth import ensure_hf_login
+
+        ensure_hf_login()
+
         tokenizer = AutoTokenizer.from_pretrained(config.base_model)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
@@ -150,21 +262,26 @@ def run_training(config: TrainingConfig, smoke_test: bool = False) -> dict:
     train_dataset = Dataset.from_list(train_records)
     eval_dataset = Dataset.from_list(val_records) if val_records else None
 
-    sft_config = SFTConfig(
-        output_dir=config.output_dir,
-        max_seq_length=32 if smoke_test else config.max_seq_length,
-        learning_rate=config.learning_rate,
-        num_train_epochs=1 if smoke_test else config.num_train_epochs,
-        per_device_train_batch_size=2 if smoke_test else config.per_device_train_batch_size,
-        gradient_accumulation_steps=1 if smoke_test else config.gradient_accumulation_steps,
-        warmup_ratio=config.warmup_ratio,
-        weight_decay=config.weight_decay,
-        logging_steps=1 if smoke_test else config.logging_steps,
-        save_strategy="no" if smoke_test else config.save_strategy,
-        eval_strategy="no" if (smoke_test or eval_dataset is None) else config.eval_strategy,
-        dataset_text_field="text",
-        report_to=[],
-        seed=config.seed,
+    sft_config = build_sft_config(
+        SFTConfig,
+        {
+            "output_dir": config.output_dir,
+            "max_length": 32 if smoke_test else config.max_seq_length,
+            "learning_rate": config.learning_rate,
+            "num_train_epochs": 1 if smoke_test else config.num_train_epochs,
+            "per_device_train_batch_size": 2 if smoke_test else config.per_device_train_batch_size,
+            "gradient_accumulation_steps": 1 if smoke_test else config.gradient_accumulation_steps,
+            "warmup_ratio": config.warmup_ratio,
+            "weight_decay": config.weight_decay,
+            "logging_steps": 1 if smoke_test else config.logging_steps,
+            "save_strategy": "no" if smoke_test else config.save_strategy,
+            "eval_strategy": "no"
+            if (smoke_test or eval_dataset is None)
+            else config.eval_strategy,
+            "dataset_text_field": "text",
+            "report_to": [],
+            "seed": config.seed,
+        },
     )
 
     trainer = SFTTrainer(

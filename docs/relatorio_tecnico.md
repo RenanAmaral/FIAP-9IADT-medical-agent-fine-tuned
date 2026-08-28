@@ -138,9 +138,9 @@ adapters treináveis.
 | Parâmetro | Valor |
 |---|---|
 | Learning rate | 2e-4 |
-| Épocas | 3 |
+| Épocas | 12 |
 | Batch size (por device) | 4 |
-| Gradient accumulation | 4 (batch efetivo 16) |
+| Gradient accumulation | 1 (batch efetivo 4) |
 | LoRA `r` | 16 |
 | LoRA `alpha` | 32 |
 | LoRA dropout | 0,05 |
@@ -150,6 +150,38 @@ adapters treináveis.
 
 Todos são salvos junto dos adapters em `hyperparameters.json` ao final do
 treino, junto das métricas de loss.
+
+**Sobre o número de épocas.** A configuração inicial (3 épocas, batch efetivo
+16) rendia apenas **~9 atualizações de peso** sobre os 59 exemplos de treino.
+Com tão poucos passos os adapters LoRA praticamente não saem da
+inicialização, e a comparação antes/depois — que é justamente o que o
+enunciado cobra — não mostraria diferença alguma. Reduzir a acumulação de
+gradiente para 1 e subir para 12 épocas dá **~168 atualizações**, mantendo o
+treino em poucos minutos numa T4. O script imprime esse plano antes de
+começar e emite aviso se o total cair abaixo de 50 passos.
+
+### 3.3.1 Robustez a versões de biblioteca
+
+O treino roda em Colab/Kaggle, onde as versões de `trl` e `transformers`
+mudam sem aviso. Isso não é hipotético: a primeira execução real falhou com
+`TypeError: SFTConfig.__init__() got an unexpected keyword argument
+'max_seq_length'` — o parâmetro foi renomeado para `max_length` — **depois**
+de já ter baixado 2,2 GB de pesos.
+
+`resolve_config_kwargs` passou a traduzir esses nomes em runtime,
+inspecionando o que a versão instalada aceita:
+
+| Nome canônico | Alternativa | Onde mudou |
+|---|---|---|
+| `max_length` | `max_seq_length` | trl < 0.20 |
+| `warmup_ratio` | `warmup_steps` | transformers 5.x |
+| `eval_strategy` | `evaluation_strategy` | transformers < 4.41 |
+| `dtype` | `torch_dtype` | transformers 5.0 |
+
+O caso do `dtype` é o mais traiçoeiro: como `from_pretrained` recebe
+`**kwargs`, o nome errado não levanta erro — apenas é ignorado, e o modelo
+carrega em fp32 silenciosamente. Por isso ali a escolha é feita pelo número
+de versão. `tests/test_finetuning_compat.py` cobre as duas convenções.
 
 ### 3.4 Contrato de prompt
 
@@ -421,12 +453,13 @@ profissional a lê-lo como aval clínico.
 
 ## 7. Testes
 
-**88 testes** (`pytest -q`), distribuídos por camada:
+**100 testes** (`pytest -q`), distribuídos por camada:
 
 | Arquivo | Cobre |
 |---|---|
 | `test_preprocessing.py` | Anonimização, limpeza, deduplicação, curadoria, splits. |
 | `test_finetuning.py` | Contrato de prompt e carregamento do dataset. |
+| `test_finetuning_compat.py` | Tradução de nomes de parâmetro entre versões de `trl`/`transformers`. |
 | `test_database.py` | Base estruturada, exames pendentes, idempotência do seed. |
 | `test_assistant.py` | RAG, benchmark de recuperação, explainability, chain, auditoria. |
 | `test_guardrails.py` | Bloqueios e — igualmente importante — casos legítimos que **não** devem ser bloqueados. |

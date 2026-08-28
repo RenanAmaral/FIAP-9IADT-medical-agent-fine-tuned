@@ -129,6 +129,10 @@ def _build_hf_pipeline_llm(
     from langchain_community.llms import HuggingFacePipeline
     from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
+    from finetuning.hf_auth import dtype_kwarg, ensure_hf_login
+
+    ensure_hf_login(verbose=False)
+
     tokenizer = AutoTokenizer.from_pretrained(base_model)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -136,7 +140,7 @@ def _build_hf_pipeline_llm(
     model = AutoModelForCausalLM.from_pretrained(
         base_model,
         device_map="auto",
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        **dtype_kwarg(torch.float16 if torch.cuda.is_available() else torch.float32),
     )
 
     if adapter_dir:

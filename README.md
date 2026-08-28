@@ -194,11 +194,16 @@ O treino exige GPU e acesso à Hugging Face Hub, então roda no **Google Colab
 ou Kaggle** — há um notebook pronto em
 `finetuning/notebooks/colab_finetune.ipynb`.
 
+**Antes: configure um token da Hugging Face.** Sem ele os downloads são
+anônimos e compartilham o limite de taxa do IP do Colab, ficando mais lentos e
+podendo falhar com HTTP 429 no meio dos 2 GB de pesos. Crie um token de
+leitura em https://huggingface.co/settings/tokens e adicione-o como secret
+`HF_TOKEN` no Colab (🔑, com *Notebook access* ativo), ou
+`export HF_TOKEN=hf_xxx` localmente. Os scripts o detectam automaticamente.
+
 ```bash
 # Treinar (LoRA/QLoRA)
-python -m finetuning.train \
-    --base-model TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
-    --epochs 3 --batch-size 4 --lora-r 16
+python -m finetuning.train --base-model TinyLlama/TinyLlama-1.1B-Chat-v1.0
 
 # Avaliar (perplexidade, ROUGE, comparação antes/depois)
 python -m finetuning.evaluate \
@@ -281,9 +286,10 @@ pytest -q                        # suíte completa
 pytest tests/test_graph.py -q    # só o grafo
 ```
 
-**88 testes** cobrindo anonimização, curadoria, contrato de prompt, base
+**100 testes** cobrindo anonimização, curadoria, contrato de prompt, base
 estruturada, recuperação (RAG), guardrails, explainability, os três caminhos
-do grafo e o schema do log de auditoria.
+do grafo, o schema do log de auditoria e a compatibilidade entre versões de
+`trl`/`transformers`.
 
 ---
 

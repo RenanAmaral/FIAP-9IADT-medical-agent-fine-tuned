@@ -80,9 +80,16 @@ class TrainingConfig:
 
     max_seq_length: int = 1024
     learning_rate: float = 2e-4
-    num_train_epochs: int = 3
+
+    # O dataset é pequeno (~59 exemplos de treino). Com batch efetivo 16 e 3
+    # épocas seriam apenas ~9 atualizações de peso — os adapters LoRA mal
+    # sairiam da inicialização e a comparação antes/depois não mostraria
+    # diferença alguma. Com batch efetivo 4 e 12 épocas são ~180 passos, que
+    # é o suficiente para o modelo aprender o formato de resposta
+    # institucional, e ainda assim o treino leva poucos minutos numa T4.
+    num_train_epochs: int = 12
     per_device_train_batch_size: int = 4
-    gradient_accumulation_steps: int = 4
+    gradient_accumulation_steps: int = 1
     warmup_ratio: float = 0.03
     weight_decay: float = 0.01
     logging_steps: int = 10
