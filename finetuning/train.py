@@ -26,6 +26,7 @@ from typing import Any
 
 from finetuning.config import LoraParams, TrainingConfig
 from finetuning.dataset import load_training_dataset
+from finetuning.paths import find_latest_checkpoint
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -271,30 +272,6 @@ def build_config_from_args(args: argparse.Namespace) -> TrainingConfig:
         seed=args.seed,
         lora=LoraParams(r=args.lora_r, lora_alpha=args.lora_alpha),
     )
-
-
-def find_latest_checkpoint(output_dir: str | Path) -> Path | None:
-    """Último checkpoint salvo em `output_dir`, se houver.
-
-    O Trainer salva em subpastas `checkpoint-<passo global>`; ordenamos pelo
-    número do passo, não alfabeticamente (senão `checkpoint-90` viria depois
-    de `checkpoint-135`).
-    """
-    output_dir = Path(output_dir)
-    if not output_dir.is_dir():
-        return None
-
-    checkpoints = []
-    for path in output_dir.glob("checkpoint-*"):
-        if not path.is_dir():
-            continue
-        suffix = path.name.removeprefix("checkpoint-")
-        if suffix.isdigit():
-            checkpoints.append((int(suffix), path))
-
-    if not checkpoints:
-        return None
-    return max(checkpoints)[1]
 
 
 def resolve_resume_target(config: TrainingConfig, resume: str | None) -> str | bool | None:

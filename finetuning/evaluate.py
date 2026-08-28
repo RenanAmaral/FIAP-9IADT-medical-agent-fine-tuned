@@ -25,6 +25,7 @@ from pathlib import Path
 
 from finetuning.config import format_prompt
 from finetuning.dataset import read_jsonl
+from finetuning.paths import resolve_adapter_dir
 
 
 def _load_pipeline(base_model: str, adapter_dir: str | None):
@@ -48,7 +49,7 @@ def _load_pipeline(base_model: str, adapter_dir: str | None):
         **dtype_kwarg(torch.float16 if torch.cuda.is_available() else torch.float32),
     )
     if adapter_dir:
-        model = PeftModel.from_pretrained(model, adapter_dir)
+        model = PeftModel.from_pretrained(model, resolve_adapter_dir(adapter_dir))
     model.eval()
     return model, tokenizer
 
@@ -88,6 +89,13 @@ def run_evaluation(
     max_examples: int = 20,
 ) -> dict:
     from rouge_score import rouge_scorer
+
+    # Valida o caminho dos adapters ANTES de carregar qualquer modelo: sem
+    # isso, uma falha aqui só apareceria depois de carregar o modelo base e
+    # gerar todas as respostas dele — vários minutos jogados fora para
+    # descobrir um erro de caminho.
+    if adapter_dir:
+        adapter_dir = resolve_adapter_dir(adapter_dir)
 
     test_records = read_jsonl(test_file)[:max_examples]
     prompts = [format_prompt(r["instruction"], r.get("input", "")) for r in test_records]

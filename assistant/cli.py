@@ -67,6 +67,12 @@ def main() -> None:
         help="Backend da LLM. 'template' é o stub offline de desenvolvimento; "
         "'finetuned' usa os adapters da Etapa 2 (requer GPU/modelo baixado).",
     )
+    parser.add_argument(
+        "--adapter-dir",
+        default="finetuning/adapters/medical-assistant-lora",
+        help="Diretório dos adapters LoRA (usado com --backend finetuned). "
+        "Se o treino gravou em outro caminho (ex.: Google Drive), passe-o aqui.",
+    )
     parser.add_argument("--db-path", type=Path, default=DEFAULT_DB_PATH)
     parser.add_argument("--protocols-dir", type=Path, default=Path("data/protocols"))
     parser.add_argument("--log-path", type=Path, default=Path("logs/audit.jsonl"))
@@ -88,11 +94,16 @@ def main() -> None:
             "Rode primeiro: python -m assistant.database"
         )
 
+    # adapter_dir só faz sentido para o backend com fine-tuning; passá-lo aos
+    # demais quebraria a construção da LLM.
+    llm_kwargs = {"adapter_dir": args.adapter_dir} if args.backend == "finetuned" else {}
+
     assistant = build_assistant(
         backend=args.backend,
         db_path=args.db_path,
         protocols_dir=args.protocols_dir,
         log_path=args.log_path,
+        **llm_kwargs,
     )
     assistant.top_k = args.top_k
 

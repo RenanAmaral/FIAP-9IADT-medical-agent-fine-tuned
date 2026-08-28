@@ -146,7 +146,9 @@ def _build_hf_pipeline_llm(
     if adapter_dir:
         from peft import PeftModel
 
-        model = PeftModel.from_pretrained(model, adapter_dir)
+        from finetuning.paths import resolve_adapter_dir
+
+        model = PeftModel.from_pretrained(model, resolve_adapter_dir(adapter_dir))
         model = model.merge_and_unload()
 
     model.eval()

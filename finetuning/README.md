@@ -92,6 +92,32 @@ ls finetuning/adapters/medical-assistant-lora/
 
 Se a máquina foi reciclada, a pasta não existe mais e não há o que retomar.
 
+### O caminho tem que bater entre treino e avaliação
+
+Se você treinou com `--output-dir` apontando para o Drive, **use o mesmo
+caminho** em `--adapter-dir` na avaliação e no assistente:
+
+```bash
+OUT='/content/drive/MyDrive/tech-challenge-fase3/medical-assistant-lora'
+
+python -m finetuning.train    --output-dir  "$OUT" --resume
+python -m finetuning.evaluate --adapter-dir "$OUT" --base-model TinyLlama/TinyLlama-1.1B-Chat-v1.0
+python -m graphs.cli --backend finetuned --adapter-dir "$OUT" --paciente PAC-0003 --pergunta "Qual a conduta?"
+```
+
+`resolve_adapter_dir` (em `finetuning/paths.py`) valida esse caminho antes de
+carregar qualquer modelo e explica o que está errado. Sem essa validação, um
+caminho inexistente era repassado ao PEFT, que o interpretava como
+identificador de repositório da Hugging Face e devolvia
+`HFValidationError: Repo id must be in the form 'repo_name' or
+'namespace/repo_name'` — uma mensagem que não diz nada sobre a causa real.
+Pior: o erro só aparecia **depois** de carregar o modelo base e gerar todas as
+respostas dele, desperdiçando minutos.
+
+A validação também cobre o caso de um treino interrompido: se o diretório não
+tem `adapter_config.json` mas contém checkpoints, o checkpoint mais recente é
+usado automaticamente, com aviso.
+
 ### Evitar o problema: salvar no Drive
 
 A proteção real é gravar os checkpoints no Google Drive, que persiste entre

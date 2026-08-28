@@ -238,3 +238,77 @@ def test_resume_flag_parsing():
     assert parser.parse_args([]).resume is None
     assert parser.parse_args(["--resume"]).resume == "auto"
     assert parser.parse_args(["--resume", "/x/checkpoint-1"]).resume == "/x/checkpoint-1"
+
+
+# --------------------------------------------------------------------------
+# Resolução do diretório de adapters
+# --------------------------------------------------------------------------
+
+
+def test_adapter_dir_with_config_is_used_directly(tmp_path):
+    from finetuning.paths import resolve_adapter_dir
+
+    (tmp_path / "adapter_config.json").write_text("{}")
+    assert resolve_adapter_dir(tmp_path) == str(tmp_path)
+
+
+def test_adapter_dir_falls_back_to_latest_checkpoint(tmp_path, capsys):
+    """Treino interrompido antes de salvar o modelo final: só há checkpoints."""
+    from finetuning.paths import resolve_adapter_dir
+
+    for step in (45, 135):
+        ckpt = tmp_path / f"checkpoint-{step}"
+        ckpt.mkdir()
+        (ckpt / "adapter_config.json").write_text("{}")
+
+    assert resolve_adapter_dir(tmp_path).endswith("checkpoint-135")
+    assert "checkpoint-135" in capsys.readouterr().out
+
+
+def test_missing_adapter_dir_names_the_likely_cause(tmp_path):
+    """A mensagem precisa apontar o descompasso de caminho — sem ela, o PEFT
+    trata o caminho local como repo da Hub e devolve um HFValidationError
+    incompreensível."""
+    from finetuning.paths import resolve_adapter_dir
+
+    with pytest.raises(FileNotFoundError) as exc:
+        resolve_adapter_dir(tmp_path / "nao-existe")
+
+    message = str(exc.value)
+    assert "--output-dir" in message
+    assert "--adapter-dir" in message
+
+
+def test_existing_but_empty_adapter_dir_reports_contents(tmp_path):
+    from finetuning.paths import resolve_adapter_dir
+
+    (tmp_path / "algum_arquivo.txt").write_text("x")
+
+    with pytest.raises(FileNotFoundError) as exc:
+        resolve_adapter_dir(tmp_path)
+
+    assert "algum_arquivo.txt" in str(exc.value)
+
+
+def test_checkpoint_without_adapter_config_is_not_used(tmp_path):
+    """Um checkpoint incompleto não deve ser aceito silenciosamente."""
+    from finetuning.paths import resolve_adapter_dir
+
+    (tmp_path / "checkpoint-15").mkdir()
+
+    with pytest.raises(FileNotFoundError):
+        resolve_adapter_dir(tmp_path)
+
+
+@pytest.mark.parametrize("module", ["assistant.cli", "graphs.cli"])
+def test_adapter_dir_flag_is_available_on_clis(module):
+    """As duas CLIs precisam aceitar --adapter-dir: sem isso, um treino que
+    gravou no Drive não tem como ser usado na demonstração."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", module, "--help"], capture_output=True, text=True
+    )
+    assert result.returncode == 0
+    assert "--adapter-dir" in result.stdout
