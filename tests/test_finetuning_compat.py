@@ -357,3 +357,49 @@ def test_drive_output_is_reported_as_persistent(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "[aviso]" not in out
     assert "persiste" in out
+
+
+# --------------------------------------------------------------------------
+# Conflito de versão do torchao
+# --------------------------------------------------------------------------
+
+
+def test_torchao_check_passes_when_absent(monkeypatch):
+    """Sem torchao instalado, o PEFT simplesmente pula o dispatcher."""
+    from finetuning import environment
+
+    monkeypatch.setattr(environment, "_installed_torchao_version", lambda: None)
+    environment.check_torchao_conflict()
+
+
+def test_torchao_check_passes_on_recent_version(monkeypatch):
+    from finetuning import environment
+
+    monkeypatch.setattr(environment, "_installed_torchao_version", lambda: (0, 16, 0))
+    environment.check_torchao_conflict()
+
+
+def test_torchao_check_fails_on_old_version(monkeypatch):
+    """torchao 0.10 é o que o Colab traz; o PEFT levanta ImportError ao
+    encontrá-lo, e queremos falhar antes de carregar o modelo."""
+    from finetuning import environment
+
+    monkeypatch.setattr(environment, "_installed_torchao_version", lambda: (0, 10, 0))
+
+    with pytest.raises(RuntimeError) as exc:
+        environment.check_torchao_conflict()
+
+    message = str(exc.value)
+    assert "0.10.0" in message
+    assert "pip uninstall -y torchao" in message
+
+
+def test_torchao_version_parsing_tolerates_suffixes(monkeypatch):
+    """Versões como '0.10.0+cu121' ou '0.17.0rc1' não podem quebrar a checagem."""
+    import importlib.metadata
+
+    from finetuning import environment
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(importlib.metadata, "version", lambda name: "0.10.0+cu121")
+    assert environment._installed_torchao_version() == (0, 10, 0)

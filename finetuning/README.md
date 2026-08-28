@@ -136,6 +136,27 @@ python -m finetuning.train --output-dir "$OUTPUT_DIR" --resume
 Com isso, uma desconexão custa no máximo a época em andamento. O notebook já
 vem com essas células.
 
+## Conflito com o torchao pré-instalado no Colab
+
+O Colab traz `torchao 0.10` pré-instalado. O PEFT recente exige `>= 0.16` e
+sua função `is_torchao_available()` **levanta `ImportError`** ao encontrar uma
+versão anterior, em vez de retornar `False`. Como este projeto não usa
+torchao para nada, a saída é removê-lo:
+
+```bash
+pip uninstall -y torchao
+```
+
+O detalhe curioso é que **o treino não é afetado**: com o modelo em 4 bits, o
+`dispatch_bnb_4bit` do PEFT casa antes e a cadeia de dispatchers nunca alcança
+o `dispatch_torchao`. O erro só aparece na avaliação e na inferência, que
+carregam o modelo sem quantização.
+
+`check_torchao_conflict()` (em `finetuning/environment.py`) detecta a
+incompatibilidade **antes** de carregar qualquer modelo e explica a correção,
+em vez de deixar o processo estourar depois de vários minutos de carregamento
+e geração. A célula de setup do notebook já remove o pacote.
+
 ## Token da Hugging Face
 
 Sem um token, os downloads da Hub são anônimos e compartilham o limite de taxa

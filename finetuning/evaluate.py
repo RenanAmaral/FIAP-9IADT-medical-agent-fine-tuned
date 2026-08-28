@@ -25,6 +25,7 @@ from pathlib import Path
 
 from finetuning.config import format_prompt
 from finetuning.dataset import read_jsonl
+from finetuning.environment import check_torchao_conflict
 from finetuning.paths import resolve_adapter_dir
 
 
@@ -90,12 +91,12 @@ def run_evaluation(
 ) -> dict:
     from rouge_score import rouge_scorer
 
-    # Valida o caminho dos adapters ANTES de carregar qualquer modelo: sem
-    # isso, uma falha aqui só apareceria depois de carregar o modelo base e
-    # gerar todas as respostas dele — vários minutos jogados fora para
-    # descobrir um erro de caminho.
+    # Valida caminho e ambiente ANTES de carregar qualquer modelo: sem isso,
+    # uma falha aqui só apareceria depois de carregar o modelo base e gerar
+    # todas as respostas dele — vários minutos jogados fora.
     if adapter_dir:
         adapter_dir = resolve_adapter_dir(adapter_dir)
+        check_torchao_conflict()
 
     test_records = read_jsonl(test_file)[:max_examples]
     prompts = [format_prompt(r["instruction"], r.get("input", "")) for r in test_records]

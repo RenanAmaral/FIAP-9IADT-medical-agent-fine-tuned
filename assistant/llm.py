@@ -146,7 +146,10 @@ def _build_hf_pipeline_llm(
     if adapter_dir:
         from peft import PeftModel
 
+        from finetuning.environment import check_torchao_conflict
         from finetuning.paths import resolve_adapter_dir
+
+        check_torchao_conflict()
 
         model = PeftModel.from_pretrained(model, resolve_adapter_dir(adapter_dir))
         model = model.merge_and_unload()
