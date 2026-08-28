@@ -94,8 +94,9 @@ Detalhes de cada camada nos READMEs de módulo:
 - **Python 3.11+**
 - **Para rodar o assistente:** nenhuma GPU. As dependências de execução são
   leves (LangChain, LangGraph, FAISS, scikit-learn).
-- **Para o fine-tuning:** GPU com pelo menos ~8 GB de VRAM (Google Colab
-  gratuito com T4 atende) e acesso à Hugging Face Hub.
+- **Para o fine-tuning:** GPU **NVIDIA** com pelo menos ~8 GB de VRAM (a T4
+  do Colab gratuito atende) e acesso à Hugging Face Hub. Runtime **TPU não
+  funciona** — o QLoRA depende do `bitsandbytes`, que só tem kernels CUDA/ROCm.
 
 ---
 

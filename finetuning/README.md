@@ -16,6 +16,47 @@ LLM exige as duas coisas. Por isso:
 - O treinamento real deve ser feito no **Google Colab** ou **Kaggle**
   (sugestão do próprio enunciado), seguindo os passos abaixo.
 
+## Qual runtime usar: GPU, não TPU
+
+**Use `T4 GPU`.** O runtime TPU (v5e-1 etc.) do Colab não serve para este
+projeto, e a razão é de software, não de potência.
+
+O QLoRA aqui depende do `bitsandbytes` para a quantização em 4 bits, e os
+kernels dele existem apenas para CUDA e ROCm — o pacote não tem backend
+TPU/XLA. Num runtime TPU o treino falha, ou cai para CPU e leva horas.
+`check_accelerator()` detecta isso e avisa antes de baixar o modelo.
+
+Mesmo desativando a quantização (`--no-4bit`), a TPU não compensaria: o
+modelo tem 1,1 B de parâmetros e o treino são ~168 passos sobre 59 exemplos.
+A vantagem da TPU aparece em lotes grandes com formas fixas; aqui, o custo de
+compilação XLA — que recompila a cada novo formato de sequência — dominaria um
+treino que na T4 leva poucos minutos.
+
+| Runtime | Serve? | Observação |
+|---|---|---|
+| **T4 GPU** | ✅ | Recomendado. 16 GB, folgado para este modelo. |
+| L4 / A100 | ✅ | Mais rápido (e com bf16 nativo), mas exige Colab Pro. |
+| v5e-1 TPU | ❌ | `bitsandbytes` não tem backend TPU/XLA. |
+| CPU | ❌ | Inviável para treino. |
+
+### Precisão numérica na T4
+
+A T4 é Turing e **não tem suporte nativo a bfloat16** — isso só aparece a
+partir de Ampere (A100) e Ada (L4). Por isso `bnb_compute_dtype` tem o
+padrão `"auto"`, que resolve para `bfloat16` em GPUs que o suportam e
+`float16` nas demais. Fixar `bfloat16` na T4 causaria erro ou emulação muito
+lenta. Para forçar: `--compute-dtype float16`.
+
+Consumo de memória na T4 (16 GB) com os padrões:
+
+| Item | Aproximado |
+|---|---|
+| TinyLlama 1.1B em 4-bit NF4 | ~0,7 GB |
+| Adapters LoRA (r=16) | poucas dezenas de MB |
+| Ativações (batch 4 × 1024 tokens) | ~2–3 GB |
+
+Sobra folga suficiente para subir o batch ou trocar por um modelo maior.
+
 ## Token da Hugging Face
 
 Sem um token, os downloads da Hub são anônimos e compartilham o limite de taxa

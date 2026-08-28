@@ -128,3 +128,30 @@ def test_plan_is_quiet_when_steps_are_sufficient(capsys):
     out = capsys.readouterr().out
     assert "[plano]" in out
     assert "[aviso]" not in out
+
+
+# --------------------------------------------------------------------------
+# Seleção de hardware e dtype
+# --------------------------------------------------------------------------
+
+
+def test_default_compute_dtype_is_auto():
+    """Fixar bfloat16 quebraria na T4 do Colab, que é Turing e não tem bf16
+    nativo. O padrão precisa ser resolvido em runtime."""
+    assert TrainingConfig().bnb_compute_dtype == "auto"
+
+
+def test_compute_dtype_is_exposed_on_cli():
+    from finetuning.train import _build_arg_parser, build_config_from_args
+
+    args = _build_arg_parser().parse_args(["--compute-dtype", "float16"])
+    assert build_config_from_args(args).bnb_compute_dtype == "float16"
+
+
+def test_accelerator_check_is_safe_without_torch(capsys):
+    """Nunca pode levantar exceção: roda antes do treino, inclusive em
+    ambientes sem torch."""
+    from finetuning.train import check_accelerator
+
+    check_accelerator()
+    capsys.readouterr()

@@ -45,6 +45,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lora-r", type=int, default=defaults.lora.r)
     parser.add_argument("--lora-alpha", type=int, default=defaults.lora.lora_alpha)
     parser.add_argument("--no-4bit", action="store_true", help="Desativa QLoRA (usa LoRA em fp16/bf16 puro)")
+    parser.add_argument(
+        "--compute-dtype",
+        default=defaults.bnb_compute_dtype,
+        choices=["auto", "bfloat16", "float16", "float32"],
+        help="Dtype de computação do QLoRA. 'auto' (padrão) usa bfloat16 só "
+        "em GPUs que o suportam nativamente (A100/L4+) e float16 nas demais, "
+        "como a T4.",
+    )
     parser.add_argument("--seed", type=int, default=defaults.seed)
     parser.add_argument(
         "--smoke-test",
@@ -136,6 +144,84 @@ def build_sft_config(config_cls, desired: dict[str, Any]):
 MIN_USEFUL_OPTIMIZER_STEPS = 50
 
 
+def check_accelerator() -> None:
+    """Verifica se há um acelerador compatível antes de baixar o modelo.
+
+    O QLoRA deste projeto depende de `bitsandbytes`, cujos kernels de
+    quantização em 4 bits existem apenas para CUDA (e ROCm). Não há backend
+    TPU/XLA. Num runtime TPU o treino falharia — ou cairia para CPU e levaria
+    horas — então é melhor avisar antes de baixar gigabytes de pesos.
+    """
+    try:
+        import torch
+    except ImportError:
+        return
+
+    if torch.cuda.is_available():
+        name = torch.cuda.get_device_name(0)
+        total_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        print(f"[gpu] {name} ({total_gb:.1f} GB) | bf16 nativo: {_supports_bf16()}")
+        return
+
+    is_tpu = False
+    try:
+        import torch_xla  # noqa: F401
+
+        is_tpu = True
+    except ImportError:
+        pass
+
+    if is_tpu:
+        print(
+            "[aviso] Runtime TPU detectado. O QLoRA deste projeto usa "
+            "bitsandbytes, que não tem backend para TPU/XLA — o treino vai "
+            "falhar ou cair para CPU.\n"
+            "        Troque para um runtime GPU (Runtime > Change runtime "
+            "type > T4 GPU). A T4 é folgada para este modelo."
+        )
+    else:
+        print(
+            "[aviso] Nenhuma GPU detectada. O treino em CPU é inviável para "
+            "este modelo.\n"
+            "        No Colab: Runtime > Change runtime type > T4 GPU."
+        )
+
+
+def _supports_bf16() -> bool:
+    """`True` se a GPU tem suporte nativo a bfloat16 (Ampere/Ada em diante)."""
+    try:
+        import torch
+
+        return bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported())
+    except Exception:
+        return False
+
+
+def resolve_compute_dtype(configured: str):
+    """Resolve o dtype de computação do QLoRA.
+
+    Com "auto", escolhe bfloat16 se a GPU o suportar nativamente e float16
+    caso contrário. Isso importa na prática: a T4 do Colab gratuito é Turing
+    e não tem bf16 nativo — pedir bfloat16 ali resulta em erro ou em
+    emulação muito lenta, enquanto fp16 roda a plena velocidade.
+    """
+    import torch
+
+    if configured == "auto":
+        chosen = "bfloat16" if _supports_bf16() else "float16"
+        print(f"[dtype] compute dtype do QLoRA: {chosen} (auto)")
+        return getattr(torch, chosen)
+
+    if configured == "bfloat16" and not _supports_bf16():
+        print(
+            "[aviso] bfloat16 pedido explicitamente, mas esta GPU não o "
+            "suporta nativamente. Isso tende a ser muito lento — considere "
+            "'auto' ou 'float16'."
+        )
+
+    return getattr(torch, configured)
+
+
 def _report_training_plan(config: TrainingConfig, n_train: int) -> None:
     """Imprime o plano de treino e alerta se ele for curto demais para
     produzir um modelo mensuravelmente diferente do base."""
@@ -171,6 +257,7 @@ def build_config_from_args(args: argparse.Namespace) -> TrainingConfig:
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
         load_in_4bit=not args.no_4bit,
+        bnb_compute_dtype=args.compute_dtype,
         seed=args.seed,
         lora=LoraParams(r=args.lora_r, lora_alpha=args.lora_alpha),
     )
@@ -194,6 +281,7 @@ def run_training(config: TrainingConfig, smoke_test: bool = False) -> dict:
     val_records = load_training_dataset(config.val_file) if Path(config.val_file).exists() else []
 
     if not smoke_test:
+        check_accelerator()
         _report_training_plan(config, len(train_records))
 
     if smoke_test:
@@ -237,7 +325,7 @@ def run_training(config: TrainingConfig, smoke_test: bool = False) -> dict:
             BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=getattr(torch, config.bnb_compute_dtype),
+                bnb_4bit_compute_dtype=resolve_compute_dtype(config.bnb_compute_dtype),
                 bnb_4bit_use_double_quant=True,
             )
             if config.load_in_4bit

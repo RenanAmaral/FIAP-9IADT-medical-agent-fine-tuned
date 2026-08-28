@@ -97,7 +97,13 @@ class TrainingConfig:
     eval_strategy: str = "epoch"
 
     load_in_4bit: bool = True
-    bnb_compute_dtype: str = "bfloat16"
+
+    # "auto" resolve para bfloat16 em GPUs que o suportam nativamente
+    # (Ampere/Ada em diante: A100, L4, RTX 30xx+) e para float16 nas demais.
+    # A T4 do Colab gratuito é Turing e NÃO tem bf16 nativo — fixar
+    # "bfloat16" ali causa erro ou emulação muito lenta. Ver
+    # `resolve_compute_dtype` em train.py.
+    bnb_compute_dtype: str = "auto"
 
     seed: int = 42
 
