@@ -55,6 +55,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--seed", type=int, default=defaults.seed)
     parser.add_argument(
+        "--resume",
+        nargs="?",
+        const="auto",
+        default=None,
+        metavar="CHECKPOINT",
+        help="Retoma um treino interrompido. Sem valor, usa o checkpoint mais "
+        "recente em --output-dir; com um caminho, usa aquele checkpoint. "
+        "Útil quando o Colab desconecta no meio do treino.",
+    )
+    parser.add_argument(
         "--smoke-test",
         action="store_true",
         help="Roda um teste mecânico rápido com um modelo minúsculo e "
@@ -263,7 +273,62 @@ def build_config_from_args(args: argparse.Namespace) -> TrainingConfig:
     )
 
 
-def run_training(config: TrainingConfig, smoke_test: bool = False) -> dict:
+def find_latest_checkpoint(output_dir: str | Path) -> Path | None:
+    """Último checkpoint salvo em `output_dir`, se houver.
+
+    O Trainer salva em subpastas `checkpoint-<passo global>`; ordenamos pelo
+    número do passo, não alfabeticamente (senão `checkpoint-90` viria depois
+    de `checkpoint-135`).
+    """
+    output_dir = Path(output_dir)
+    if not output_dir.is_dir():
+        return None
+
+    checkpoints = []
+    for path in output_dir.glob("checkpoint-*"):
+        if not path.is_dir():
+            continue
+        suffix = path.name.removeprefix("checkpoint-")
+        if suffix.isdigit():
+            checkpoints.append((int(suffix), path))
+
+    if not checkpoints:
+        return None
+    return max(checkpoints)[1]
+
+
+def resolve_resume_target(config: TrainingConfig, resume: str | None) -> str | bool | None:
+    """Traduz a opção `--resume` no valor esperado por `Trainer.train`.
+
+    `--resume` sem valor procura o checkpoint mais recente; com um caminho,
+    usa aquele checkpoint. Se nada for encontrado, avisa e treina do zero em
+    vez de falhar — retomar é uma conveniência, não um pré-requisito.
+    """
+    if resume is None:
+        return None
+
+    if resume != "auto":
+        path = Path(resume)
+        if not path.is_dir():
+            raise FileNotFoundError(f"Checkpoint não encontrado: {path}")
+        print(f"[resume] Retomando de {path}")
+        return str(path)
+
+    latest = find_latest_checkpoint(config.output_dir)
+    if latest is None:
+        print(
+            f"[resume] Nenhum checkpoint em {config.output_dir} — "
+            "iniciando o treino do zero."
+        )
+        return None
+
+    print(f"[resume] Retomando do checkpoint mais recente: {latest}")
+    return str(latest)
+
+
+def run_training(
+    config: TrainingConfig, smoke_test: bool = False, resume: str | None = None
+) -> dict:
     import torch
     from datasets import Dataset
     from peft import LoraConfig, get_peft_model
@@ -279,6 +344,8 @@ def run_training(config: TrainingConfig, smoke_test: bool = False) -> dict:
 
     train_records = load_training_dataset(config.train_file)
     val_records = load_training_dataset(config.val_file) if Path(config.val_file).exists() else []
+
+    resume_from = None if smoke_test else resolve_resume_target(config, resume)
 
     if not smoke_test:
         check_accelerator()
@@ -380,7 +447,7 @@ def run_training(config: TrainingConfig, smoke_test: bool = False) -> dict:
         processing_class=tokenizer,
     )
 
-    train_result = trainer.train()
+    train_result = trainer.train(resume_from_checkpoint=resume_from)
 
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)
     trainer.save_model(config.output_dir)
@@ -402,7 +469,7 @@ def run_training(config: TrainingConfig, smoke_test: bool = False) -> dict:
 def main() -> None:
     args = _build_arg_parser().parse_args()
     config = build_config_from_args(args)
-    metrics = run_training(config, smoke_test=args.smoke_test)
+    metrics = run_training(config, smoke_test=args.smoke_test, resume=args.resume)
     print(json.dumps(metrics, indent=2, default=str))
 
 

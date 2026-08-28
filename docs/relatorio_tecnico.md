@@ -453,7 +453,7 @@ profissional a lê-lo como aval clínico.
 
 ## 7. Testes
 
-**100 testes** (`pytest -q`), distribuídos por camada:
+**112 testes** (`pytest -q`), distribuídos por camada:
 
 | Arquivo | Cobre |
 |---|---|

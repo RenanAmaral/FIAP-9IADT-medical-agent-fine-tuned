@@ -202,9 +202,13 @@ leitura em https://huggingface.co/settings/tokens e adicione-o como secret
 `HF_TOKEN` no Colab (🔑, com *Notebook access* ativo), ou
 `export HF_TOKEN=hf_xxx` localmente. Os scripts o detectam automaticamente.
 
+O treino leva cerca de **30 minutos numa T4** (~180 passos a ~10 s cada).
+Se o Colab desconectar no meio, `--resume` retoma do último checkpoint —
+veja [`finetuning/README.md`](finetuning/README.md#se-o-colab-desconectar-no-meio-do-treino).
+
 ```bash
-# Treinar (LoRA/QLoRA)
-python -m finetuning.train --base-model TinyLlama/TinyLlama-1.1B-Chat-v1.0
+# Treinar (LoRA/QLoRA); --resume continua um treino interrompido
+python -m finetuning.train --base-model TinyLlama/TinyLlama-1.1B-Chat-v1.0 --resume
 
 # Avaliar (perplexidade, ROUGE, comparação antes/depois)
 python -m finetuning.evaluate \
@@ -287,7 +291,7 @@ pytest -q                        # suíte completa
 pytest tests/test_graph.py -q    # só o grafo
 ```
 
-**100 testes** cobrindo anonimização, curadoria, contrato de prompt, base
+**112 testes** cobrindo anonimização, curadoria, contrato de prompt, base
 estruturada, recuperação (RAG), guardrails, explainability, os três caminhos
 do grafo, o schema do log de auditoria e a compatibilidade entre versões de
 `trl`/`transformers`.

@@ -155,3 +155,86 @@ def test_accelerator_check_is_safe_without_torch(capsys):
 
     check_accelerator()
     capsys.readouterr()
+
+
+# --------------------------------------------------------------------------
+# Retomada de treino interrompido
+# --------------------------------------------------------------------------
+
+
+def test_latest_checkpoint_is_picked_numerically(tmp_path):
+    """checkpoint-135 é mais recente que checkpoint-90, mas vem antes na
+    ordem alfabética — a comparação tem que ser numérica."""
+    from finetuning.train import find_latest_checkpoint
+
+    for step in (15, 45, 90, 135):
+        (tmp_path / f"checkpoint-{step}").mkdir()
+
+    assert find_latest_checkpoint(tmp_path).name == "checkpoint-135"
+
+
+def test_non_checkpoint_entries_are_ignored(tmp_path):
+    from finetuning.train import find_latest_checkpoint
+
+    (tmp_path / "checkpoint-30").mkdir()
+    (tmp_path / "checkpoint-invalido").mkdir()
+    (tmp_path / "checkpoint-99.txt").write_text("x")
+
+    assert find_latest_checkpoint(tmp_path).name == "checkpoint-30"
+
+
+def test_no_checkpoints_returns_none(tmp_path):
+    from finetuning.train import find_latest_checkpoint
+
+    assert find_latest_checkpoint(tmp_path) is None
+    assert find_latest_checkpoint(tmp_path / "nao-existe") is None
+
+
+def test_resume_auto_without_checkpoints_trains_from_scratch(tmp_path, capsys):
+    """Retomar é conveniência: sem checkpoint, treina do zero em vez de
+    falhar."""
+    from finetuning.train import resolve_resume_target
+
+    result = resolve_resume_target(TrainingConfig(output_dir=str(tmp_path)), "auto")
+    assert result is None
+    assert "do zero" in capsys.readouterr().out
+
+
+def test_resume_auto_finds_checkpoint(tmp_path):
+    from finetuning.train import resolve_resume_target
+
+    (tmp_path / "checkpoint-135").mkdir()
+    result = resolve_resume_target(TrainingConfig(output_dir=str(tmp_path)), "auto")
+    assert result.endswith("checkpoint-135")
+
+
+def test_resume_with_explicit_path(tmp_path):
+    from finetuning.train import resolve_resume_target
+
+    ckpt = tmp_path / "checkpoint-45"
+    ckpt.mkdir()
+    assert resolve_resume_target(TrainingConfig(), str(ckpt)) == str(ckpt)
+
+
+def test_resume_with_missing_path_raises():
+    """Caminho explícito e inexistente é erro do usuário — falhar aqui é
+    melhor que treinar do zero em silêncio."""
+    from finetuning.train import resolve_resume_target
+
+    with pytest.raises(FileNotFoundError):
+        resolve_resume_target(TrainingConfig(), "/caminho/que/nao/existe")
+
+
+def test_no_resume_flag_means_fresh_training():
+    from finetuning.train import resolve_resume_target
+
+    assert resolve_resume_target(TrainingConfig(), None) is None
+
+
+def test_resume_flag_parsing():
+    from finetuning.train import _build_arg_parser
+
+    parser = _build_arg_parser()
+    assert parser.parse_args([]).resume is None
+    assert parser.parse_args(["--resume"]).resume == "auto"
+    assert parser.parse_args(["--resume", "/x/checkpoint-1"]).resume == "/x/checkpoint-1"

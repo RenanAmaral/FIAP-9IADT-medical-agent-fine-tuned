@@ -57,6 +57,59 @@ Consumo de memória na T4 (16 GB) com os padrões:
 
 Sobra folga suficiente para subir o batch ou trocar por um modelo maior.
 
+## Se o Colab desconectar no meio do treino
+
+O Colab derruba a sessão por inatividade ou por limite de uso. Quando a
+máquina é reciclada, **tudo em `/content/` é perdido** — inclusive os
+checkpoints.
+
+### Retomar
+
+O treino salva um checkpoint por época (`save_strategy="epoch"`), em
+`<output-dir>/checkpoint-<passo>`. Para continuar de onde parou:
+
+```bash
+python -m finetuning.train --resume
+```
+
+Sem valor, `--resume` procura o checkpoint mais recente em `--output-dir`
+(comparando o número do passo, não a ordem alfabética — `checkpoint-135` é
+mais recente que `checkpoint-90`). Também aceita um caminho explícito:
+
+```bash
+python -m finetuning.train --resume finetuning/adapters/medical-assistant-lora/checkpoint-135
+```
+
+Se não houver checkpoint nenhum, o script avisa e treina do zero, em vez de
+falhar. Um caminho explícito inexistente, ao contrário, levanta erro — ali o
+silêncio esconderia um engano do usuário.
+
+**Primeiro confirme que os arquivos sobreviveram:**
+
+```bash
+ls finetuning/adapters/medical-assistant-lora/
+```
+
+Se a máquina foi reciclada, a pasta não existe mais e não há o que retomar.
+
+### Evitar o problema: salvar no Drive
+
+A proteção real é gravar os checkpoints no Google Drive, que persiste entre
+sessões:
+
+```python
+from google.colab import drive
+drive.mount('/content/drive')
+OUTPUT_DIR = '/content/drive/MyDrive/tech-challenge-fase3/medical-assistant-lora'
+```
+
+```bash
+python -m finetuning.train --output-dir "$OUTPUT_DIR" --resume
+```
+
+Com isso, uma desconexão custa no máximo a época em andamento. O notebook já
+vem com essas células.
+
 ## Token da Hugging Face
 
 Sem um token, os downloads da Hub são anônimos e compartilham o limite de taxa
@@ -160,13 +213,25 @@ LoRA mal saíam da inicialização e o modelo treinado ficaria indistinguível d
 base na avaliação, esvaziando a comparação antes/depois que o relatório
 precisa mostrar.
 
-Com batch efetivo 4 e 12 épocas são **~168 atualizações**, e o treino ainda
-leva poucos minutos numa T4. O script imprime o plano antes de começar e
-avisa se o número de passos cair abaixo do útil:
+Com batch efetivo 4 e 12 épocas são **~180 atualizações**. O script imprime o
+plano antes de começar e avisa se o número de passos cair abaixo do útil:
 
 ```
-[plano] 59 exemplos | batch efetivo 4 | 14 passos/época × 12 épocas = ~168 atualizações de peso
+[plano] 59 exemplos | batch efetivo 4 | 15 passos/época × 12 épocas = ~180 atualizações de peso
 ```
+
+### Tempo real de treino
+
+Medido numa T4 do Colab: **~10 s por passo**, ou seja **~30 minutos** para os
+180 passos. Some o download do modelo e a avaliação e o notebook completo fica
+em torno de **40 minutos**.
+
+Vale saber que o modelo converge bem antes do fim. Numa execução real, na
+**época 9** a perda de validação já estava em 0,0146 com 99,6% de acurácia por
+token — o modelo memorizou os 59 exemplos, o que é esperado num dataset
+pequeno. As últimas épocas não acrescentam nada mensurável: se o treino for
+interrompido depois da época 8 ou 9, o checkpoint correspondente já serve para
+a avaliação e a demonstração.
 
 Todos os hiperparâmetros efetivamente usados e as métricas de treino/
 avaliação são salvos em `finetuning/adapters/<nome>/hyperparameters.json`
