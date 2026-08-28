@@ -291,7 +291,7 @@ pytest -q                        # suíte completa
 pytest tests/test_graph.py -q    # só o grafo
 ```
 
-**128 testes** cobrindo anonimização, curadoria, contrato de prompt, base
+**132 testes** cobrindo anonimização, curadoria, contrato de prompt, base
 estruturada, recuperação (RAG), guardrails, explainability, os três caminhos
 do grafo, o schema do log de auditoria e a compatibilidade entre versões de
 `trl`/`transformers`.

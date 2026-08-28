@@ -240,3 +240,34 @@ def test_comparison_writes_markdown_with_both_answers(retriever, db_path, tmp_pa
     assert "qSOFA" in text
     assert text.count("### `template`") == 2
     assert "mesmo contexto recuperado" in text
+
+
+def test_numeric_divergence_flags_altered_values():
+    """Os dois erros reais encontrados na avaliação do modelo fine-tuned."""
+    from assistant.compare_backends import numeros_divergentes
+
+    contexto = "qSOFA: FR >= 22irpm, PAS <= 100 mmHg. Diagnóstico: HbA1c >= 6,5%."
+    divergentes = numeros_divergentes("PAS <= 400 mmHg e HbA1c >= 9%", contexto)
+
+    assert "400 mmHg" in divergentes
+    assert "9%" in divergentes
+
+
+def test_numeric_divergence_silent_on_faithful_answer():
+    from assistant.compare_backends import numeros_divergentes
+
+    contexto = "PAS <= 100 mmHg. HbA1c >= 6,5%."
+    assert numeros_divergentes("Considere PAS <= 100 mmHg e HbA1c >= 6,5%.", contexto) == []
+
+
+def test_numeric_divergence_normalizes_decimal_separator():
+    """"6.5%" e "6,5%" são o mesmo valor — não podem virar falso positivo."""
+    from assistant.compare_backends import numeros_divergentes
+
+    assert numeros_divergentes("HbA1c >= 6.5%", "HbA1c >= 6,5%") == []
+
+
+def test_numeric_divergence_ignores_spacing():
+    from assistant.compare_backends import numeros_divergentes
+
+    assert numeros_divergentes("100mmHg", "PAS <= 100 mmHg") == []

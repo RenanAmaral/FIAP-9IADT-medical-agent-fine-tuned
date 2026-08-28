@@ -70,16 +70,33 @@ oferece embeddings densos para produção (requer rede na primeira execução).
 
 ## Comparando modelo base e fine-tuned no assistente completo
 
+Uma pergunta, comparada na tela (não salva arquivo):
+
 ```bash
 python -m assistant.compare_backends \
-    --paciente PAC-0003 \
-    --pergunta "Qual a conduta para este paciente?" \
+    --pergunta "Quais critérios do qSOFA indicam sepse?" \
     --adapter-dir finetuning/adapters/medical-assistant-lora
 ```
 
 Sem `--pergunta`, roda um conjunto padrão de casos que cobre os três caminhos
-do grafo e as perguntas de limiar numérico (HbA1c, qSOFA), onde a alucionação
-do modelo aparece.
+do grafo e as perguntas de limiar numérico (HbA1c, qSOFA) — e aí sim salva em
+`docs/comparacao_backends.md`, por ser material de relatório. `--output`
+força o salvamento em qualquer caso; `--max-chars` trunca a exibição.
+
+### Conferência automática dos números
+
+Cada resposta é comparada com o protocolo recuperado, e valores clínicos que
+**não aparecem na fonte** são sinalizados:
+
+```
+⚠️  valores clínicos que NÃO aparecem no protocolo recuperado: 400 mmHg, 9%
+```
+
+Não é prova de erro — o modelo pode reformular corretamente — mas é onde
+olhar primeiro. Foi assim que apareceram o `HbA1c >= 9%` (o protocolo diz
+6,5%) e o `PAS <= 400 mmHg` (o protocolo diz 100) documentados em §3.6.1 do
+relatório técnico. A comparação normaliza vírgula/ponto decimal e espaçamento
+para não gerar falso positivo.
 
 Isso é diferente de `finetuning/evaluate.py`, que compara os modelos **crus**,
 recebendo só a pergunta. Aqui a comparação passa por toda a pilha — RAG,

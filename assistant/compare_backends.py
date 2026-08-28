@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,6 +59,8 @@ class CaseComparison:
     codigo_paciente: str | None
     contexto_protocolos: list[str]
     respostas: list[BackendAnswer]
+    #: Texto dos trechos recuperados, para conferir os números da resposta.
+    contexto_texto: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -68,6 +71,37 @@ class CaseComparison:
         }
 
 
+#: Valores clínicos com unidade — o tipo de token que o modelo troca sem que
+#: o ROUGE perceba (ver §3.6.1 do relatório técnico).
+CLINICAL_NUMBER_RE = re.compile(
+    r"\d+[,.]?\d*\s*(?:%|mg/dL|mmHg|mmol/L|irpm|bpm|mL/min|semanas|meses|horas|h\b)",
+    re.I,
+)
+
+
+def numeros_divergentes(resposta: str, contexto: str) -> list[str]:
+    """Valores clínicos citados na resposta que não aparecem no contexto.
+
+    Não é prova de erro — o modelo pode reformular corretamente — mas é onde
+    olhar primeiro: foi exatamente assim que apareceram o `HbA1c >= 9%` (o
+    protocolo diz 6,5%) e o `PAS <= 400 mmHg` (o protocolo diz 100).
+    """
+    def _norm(valores):
+        return {v.replace(" ", "").replace(",", ".").lower() for v in valores}
+
+    na_resposta = CLINICAL_NUMBER_RE.findall(resposta)
+    no_contexto = _norm(CLINICAL_NUMBER_RE.findall(contexto))
+
+    vistos: set[str] = set()
+    divergentes = []
+    for valor in na_resposta:
+        chave = valor.replace(" ", "").replace(",", ".").lower()
+        if chave not in no_contexto and chave not in vistos:
+            vistos.add(chave)
+            divergentes.append(valor.strip())
+    return divergentes
+
+
 def _run_backend(
     backend: str,
     cases: list[tuple[str | None, str]],
@@ -76,7 +110,7 @@ def _run_backend(
     log_path: Path,
     base_model: str,
     adapter_dir: str | None,
-) -> list[tuple[BackendAnswer, list[str]]]:
+) -> list[tuple[BackendAnswer, list[str], str]]:
     """Roda todos os casos em um backend e libera o modelo em seguida."""
     from assistant.llm import load_llm
 
@@ -112,7 +146,13 @@ def _run_backend(
             duracao_ms=response.duracao_ms,
         )
         contexto = [c.protocol_id for c in response.chunks]
-        results.append((answer, contexto))
+        # Inclui o título junto do trecho: o título é citado na resposta e
+        # pode conter valores (ex.: "Bundle 1h"), que sem isso apareceriam
+        # como divergência inexistente.
+        contexto_texto = "\n".join(
+            f"{c.titulo}\n{c.trecho}" for c in response.chunks
+        )
+        results.append((answer, contexto, contexto_texto))
 
     # Libera o modelo antes de carregar o próximo: os dois não precisam estar
     # na memória ao mesmo tempo, e em GPU pequena não caberiam.
@@ -162,6 +202,7 @@ def compare(
                 codigo_paciente=codigo,
                 contexto_protocolos=list(next(iter(contextos))),
                 respostas=[por_backend[b][i][0] for b in backends],
+                contexto_texto=por_backend[backends[0]][i][2],
             )
         )
     return comparisons
@@ -221,7 +262,20 @@ def main() -> None:
     parser.add_argument("--db-path", type=Path, default=DEFAULT_DB_PATH)
     parser.add_argument("--protocols-dir", type=Path, default=Path("data/protocols"))
     parser.add_argument("--log-path", type=Path, default=Path("logs/audit.jsonl"))
-    parser.add_argument("--output", type=Path, default=Path("docs/comparacao_backends.md"))
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Salva a comparação em Markdown/JSON. Com uma única --pergunta o "
+        "padrão é não salvar nada, só exibir na tela; sem --pergunta (conjunto "
+        "completo de casos) o padrão é docs/comparacao_backends.md.",
+    )
+    parser.add_argument(
+        "--max-chars",
+        type=int,
+        default=0,
+        help="Trunca cada resposta na exibição (0 = sem truncar).",
+    )
     args = parser.parse_args()
 
     if not args.db_path.exists():
@@ -230,9 +284,14 @@ def main() -> None:
             "Rode primeiro: python -m assistant.database"
         )
 
-    cases = (
-        [(args.paciente, args.pergunta)] if args.pergunta else DEFAULT_CASES
-    )
+    pergunta_unica = bool(args.pergunta)
+    cases = [(args.paciente, args.pergunta)] if pergunta_unica else DEFAULT_CASES
+
+    # Uma pergunta avulsa é consulta de tela; o conjunto completo é material
+    # para o relatório e por isso vai para arquivo por padrão.
+    output = args.output
+    if output is None and not pergunta_unica:
+        output = Path("docs/comparacao_backends.md")
 
     comparisons = compare(
         backends=args.backends,
@@ -244,24 +303,56 @@ def main() -> None:
         adapter_dir=args.adapter_dir,
     )
 
-    write_markdown(comparisons, args.output)
-    args.output.with_suffix(".json").write_text(
-        json.dumps([c.to_dict() for c in comparisons], ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    _print_comparisons(comparisons, max_chars=args.max_chars)
 
-    print()
+    if output is not None:
+        write_markdown(comparisons, output)
+        output.with_suffix(".json").write_text(
+            json.dumps([c.to_dict() for c in comparisons], ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(f"\nComparação salva em {output}")
+
+
+def _print_comparisons(comparisons: list[CaseComparison], max_chars: int = 0) -> None:
+    largura = 78
     for i, case in enumerate(comparisons, start=1):
-        print("=" * 78)
-        print(f"CASO {i}: {case.pergunta}")
-        print(f"Protocolos recuperados: {', '.join(case.contexto_protocolos)}")
-        for answer in case.respostas:
-            print("-" * 78)
-            print(f"[{answer.backend}]")
-            print(answer.resposta.strip()[:800])
         print()
+        print("=" * largura)
+        print(f"PERGUNTA: {case.pergunta}")
+        if case.codigo_paciente:
+            print(f"PACIENTE: {case.codigo_paciente}")
+        print(f"CONTEXTO RECUPERADO (idêntico p/ todos): {', '.join(case.contexto_protocolos)}")
+        print("=" * largura)
 
-    print(f"Comparação salva em {args.output}")
+        for answer in case.respostas:
+            confianca = f"{answer.confianca:.0%}" if answer.confianca is not None else "—"
+            cabecalho = f" {answer.backend.upper()} "
+            print()
+            print(cabecalho.center(largura, "─"))
+            print(
+                f"confiança da recuperação: {confianca} · {answer.duracao_ms:.0f} ms"
+                + ("  · BLOQUEADO" if answer.bloqueado else "")
+            )
+            print()
+
+            texto = answer.resposta.strip()
+            if max_chars and len(texto) > max_chars:
+                texto = texto[:max_chars] + "\n[...truncado]"
+            print(texto)
+
+            divergentes = numeros_divergentes(answer.resposta, case.contexto_texto)
+            if divergentes:
+                print()
+                print(
+                    "⚠️  valores clínicos que NÃO aparecem no protocolo recuperado: "
+                    + ", ".join(divergentes)
+                )
+                print(
+                    "    (confira contra a fonte — é assim que a alucinação "
+                    "numérica se manifesta)"
+                )
+        print()
 
 
 if __name__ == "__main__":
