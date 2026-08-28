@@ -201,39 +201,82 @@ treinado. Uma divergência aqui degradaria o modelo silenciosamente.
 <|end|>
 ```
 
-### 3.5 Estado da execução
+### 3.5 Onde o treino foi executado
 
-⚠️ **O treino não foi executado neste repositório.** O ambiente de
-desenvolvimento não possui GPU nem acesso à Hugging Face Hub (política de
-rede restrita). O código de treino e avaliação está completo e pronto para
-rodar no Colab/Kaggle — há um notebook em
-`finetuning/notebooks/colab_finetune.ipynb`.
+O ambiente de desenvolvimento deste repositório não possui GPU nem acesso à
+Hugging Face Hub (política de rede restrita), então **o treino foi executado
+no Google Colab** (GPU T4), com o notebook
+`finetuning/notebooks/colab_finetune.ipynb`. Os artefatos resultantes estão
+versionados em `finetuning/eval_results/`.
 
-Para que a lógica testável não ficasse refém disso, os imports pesados são
-**lazy**: `finetuning/config.py` e `finetuning/dataset.py` (contrato de prompt
-e carregamento do dataset) são importáveis e testados sem `torch`. Há também
-um modo `--smoke-test` que valida mecanicamente a pipeline (tokenização →
-LoRA → SFTTrainer → salvamento) com um GPT-2 minúsculo inicializado
-aleatoriamente, sem nenhum download.
+Para que a lógica testável não ficasse refém dessa separação, os imports
+pesados são **lazy**: `finetuning/config.py` e `finetuning/dataset.py`
+(contrato de prompt e carregamento do dataset) são importáveis e testados sem
+`torch`. Há também um modo `--smoke-test` que valida mecanicamente a pipeline
+(tokenização → LoRA → SFTTrainer → salvamento) com um GPT-2 minúsculo
+inicializado aleatoriamente, sem nenhum download.
 
-### 3.6 Avaliação planejada
+Métricas finais de treino, na época 12: **perda de validação 0,0146** e
+**99,66% de acurácia por token**. O modelo memorizou os 59 exemplos — o
+esperado num dataset desse tamanho, e a razão pela qual a avaliação abaixo
+precisa ser lida com cuidado.
 
-`finetuning/evaluate.py` produz, sobre `data/processed/test.jsonl`:
+### 3.6 Avaliação: resultados
 
-- **Perplexidade** do modelo base vs. fine-tuned;
-- **ROUGE-1 / ROUGE-L** das respostas geradas contra a referência;
-- **Comparação qualitativa lado a lado** (pergunta, referência, resposta base,
-  resposta fine-tuned).
+Execução real sobre os 8 exemplos de `data/processed/test.jsonl`
+(`finetuning/eval_results/`):
 
-Saída em `finetuning/eval_results/evaluation_report.md`.
+| Métrica | Base | Fine-tuned | Variação |
+|---|---|---|---|
+| Perplexidade | 10,73 | **1,04** | −90% |
+| ROUGE-1 | 0,225 | **0,764** | +240% |
+| ROUGE-L | 0,128 | **0,744** | +481% |
 
-> **A preencher após a execução no Colab:**
->
-> | Métrica | Base | Fine-tuned |
-> |---|---|---|
-> | Perplexidade | — | — |
-> | ROUGE-1 | — | — |
-> | ROUGE-L | — | — |
+A melhora é grande e consistente nas três métricas. Qualitativamente, a
+diferença é evidente: o modelo base inventa conteúdo clínico sem qualquer
+relação com os protocolos — ao ser perguntado como estratificar risco em
+diabetes tipo 2, respondeu sobre "doença de Alzheimer, Parkinson, Huntington
+e Friedreich". O modelo fine-tuned adota o formato institucional, cita o
+identificador do protocolo e reproduz a estrutura numerada das condutas.
+
+#### 3.6.1 O que as métricas não capturam: alucinação numérica
+
+Inspecionando as respostas além do agregado, o modelo fine-tuned **altera
+valores clínicos** enquanto mantém o formato intacto. Três ocorrências nos 8
+exemplos de teste:
+
+| Exemplo | Referência | Resposta do modelo | Gravidade |
+|---|---|---|---|
+| Diabetes (PROT-END-001) | HbA1c ≥ **6,5%** | HbA1c ≥ **9%** | Limiar diagnóstico errado |
+| Sepse (PROT-INF-001) | PAS ≤ **100 mmHg** | PAS ≤ **400 mmHg** | Fisiologicamente impossível |
+| Fibrilação atrial | **PROT-CARD-002**, escore CHA2DS2-VASc | **PROT-CARD-001**, "Framingham ≥ 120/70" | Protocolo e escore trocados |
+
+Isso é o achado mais importante da avaliação, e o ROUGE não o detecta: trocar
+"6,5" por "9" altera um único token e quase não move a métrica, mas inverte a
+orientação clínica. Um assistente que erra o limiar diagnóstico com a
+formatação perfeita é **mais perigoso** que um que erra visivelmente, porque
+passa a impressão de precisão.
+
+A causa é conhecida: 59 exemplos de treino são suficientes para o modelo
+aprender o *formato* institucional, não para fixar os *valores*. Os números
+são tokens raros no corpus e o modelo os reproduz de forma aproximada.
+
+**Isso valida a arquitetura escolhida, e não a contradiz.** É exatamente a
+razão pela qual o assistente não confia no modelo como fonte de verdade:
+
+- o **RAG** injeta o texto literal do protocolo no contexto, e o bloco de
+  fontes ([§6.3](#63-explainability)) mostra ao profissional qual documento
+  embasou a resposta, permitindo conferência;
+- a **detecção de risco** ([§5.3](#53-detecção-de-risco-determinística-fora-do-llm))
+  é determinística e não passa pelo LLM — o acionamento da equipe médica não
+  depende de o modelo ter gerado o número certo;
+- a **validação humana obrigatória** ([§6.1](#61-guardrails-em-duas-camadas))
+  existe precisamente para casos assim.
+
+Em produção, a mitigação adicional seria uma verificação programática dos
+valores numéricos da resposta contra o trecho recuperado, bloqueando ou
+sinalizando divergências — uma extensão natural de `security/guardrails.py`,
+não implementada aqui.
 
 ---
 
@@ -474,24 +517,31 @@ build em vez de degradar silenciosamente.
 
 ## 8. Limitações
 
-1. **O fine-tuning não foi executado.** Ambiente sem GPU e sem acesso à
-   Hugging Face Hub. O código está completo e pronto para o Colab; as métricas
-   do modelo em [§3.6](#36-avaliação-planejada) só ficam preenchidas após essa
-   execução. Esta é a lacuna mais relevante do trabalho.
-2. **Dataset pequeno** (59 exemplos de treino). Suficiente para o modelo
-   aprender o *formato* de resposta institucional, mas não para adquirir
-   conhecimento clínico novo. Aumentar exigiria mais protocolos ou mais
-   variação de templates.
-3. **Embeddings lexicais.** TF-IDF não captura sinonímia ("dispneia" vs.
+1. **O modelo altera valores clínicos.** A limitação mais séria do trabalho,
+   documentada em [§3.6.1](#361-o-que-as-métricas-não-capturam-alucinação-numérica):
+   com o formato institucional perfeitamente aprendido, o modelo trocou
+   `HbA1c ≥ 6,5%` por `≥ 9%` e `PAS ≤ 100 mmHg` por `≤ 400 mmHg`. O ROUGE não
+   captura isso — um dígito trocado quase não move a métrica e inverte a
+   orientação clínica. É o motivo pelo qual o RAG, a detecção determinística
+   de risco e a validação humana obrigatória não são opcionais nesta
+   arquitetura.
+2. **Dataset pequeno** (59 exemplos de treino). É a causa direta do item
+   anterior: suficiente para o modelo aprender o *formato* de resposta
+   institucional, não para fixar os *valores*. Aumentar exigiria mais
+   protocolos ou mais variação de templates.
+3. **Avaliação sobre 8 exemplos.** O conjunto de teste é pequeno demais para
+   que as métricas agregadas tenham intervalo de confiança estreito; elas
+   indicam a direção do efeito, não sua magnitude precisa.
+4. **Embeddings lexicais.** TF-IDF não captura sinonímia ("dispneia" vs.
    "falta de ar"). Embeddings densos resolveriam, ao custo da dependência de
    rede.
-4. **Detecção de risco por regex.** Funciona sobre o formato estruturado do
+5. **Detecção de risco por regex.** Funciona sobre o formato estruturado do
    prontuário sintético; prontuários reais, com texto livre e abreviações
    variadas, exigiriam NER clínico.
-5. **Guardrails baseados em padrões.** Cobrem os vetores testados, mas
+6. **Guardrails baseados em padrões.** Cobrem os vetores testados, mas
    listas de padrões são inerentemente incompletas. Em produção, valeria
    somar um classificador de escopo e revisão periódica dos logs de bloqueio.
-6. **Protocolos sintéticos.** Não refletem diretrizes reais; os limiares de
+7. **Protocolos sintéticos.** Não refletem diretrizes reais; os limiares de
    risco replicam apenas esses protocolos.
 
 ---

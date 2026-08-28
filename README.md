@@ -319,19 +319,39 @@ então uma regressão na recuperação quebra o build.
 
 ### Modelo
 
-`python -m finetuning.evaluate` produz perplexidade, ROUGE-1/ROUGE-L e uma
-comparação qualitativa lado a lado (base vs. fine-tuned) em
-`finetuning/eval_results/`. Requer os adapters treinados.
+Resultado da execução real (8 exemplos de teste, adapters treinados no Colab
+com T4). Relatório completo em `finetuning/eval_results/`:
+
+| Métrica | Base | Fine-tuned |
+|---|---|---|
+| Perplexidade | 10,73 | **1,04** |
+| ROUGE-1 | 0,225 | **0,764** |
+| ROUGE-L | 0,128 | **0,744** |
+
+Treino encerrado na época 12 com perda de validação 0,0146 e 99,66% de
+acurácia por token.
+
+⚠️ Leia essas métricas junto de
+[§3.6.1 do relatório](docs/relatorio_tecnico.md): elas medem aderência ao
+formato, e **não detectam a alucinação de valores clínicos** que a inspeção
+manual encontrou.
+
+Para reproduzir: `python -m finetuning.evaluate` (requer os adapters).
 
 ---
 
 ## Limitações conhecidas
 
-- **O fine-tuning não foi executado neste repositório.** O ambiente de
-  desenvolvimento não tem GPU nem acesso à Hugging Face Hub. O código de
-  treino e avaliação está completo e pronto para rodar no Colab/Kaggle, mas
-  as métricas do modelo em `docs/relatorio_tecnico.md` só ficam preenchidas
-  após essa execução.
+- **O modelo altera valores clínicos.** Com o formato institucional bem
+  aprendido, o modelo fine-tuned trocou `HbA1c ≥ 6,5%` por `≥ 9%` e
+  `PAS ≤ 100 mmHg` por `≤ 400 mmHg` nas respostas de teste. O ROUGE não
+  captura isso — um dígito trocado quase não move a métrica e inverte a
+  orientação clínica. É a limitação mais séria do trabalho, e a razão pela
+  qual o RAG, a detecção determinística de risco e a validação humana
+  obrigatória não são opcionais aqui. Detalhes em
+  [`docs/relatorio_tecnico.md` §3.6.1](docs/relatorio_tecnico.md).
+- **Dataset pequeno** (59 exemplos de treino), causa direta do item acima:
+  basta para aprender o formato, não para fixar os valores.
 - **Embeddings TF-IDF por padrão.** Determinísticos e offline, adequados para
   o corpus pequeno e de vocabulário técnico deste projeto. Em produção,
   embeddings densos (`load_huggingface_embeddings()`) capturariam
