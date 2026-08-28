@@ -312,3 +312,48 @@ def test_adapter_dir_flag_is_available_on_clis(module):
     )
     assert result.returncode == 0
     assert "--adapter-dir" in result.stdout
+
+
+def test_volatile_output_warning_is_silent_outside_colab(capsys):
+    from finetuning.train import warn_if_output_is_volatile
+
+    warn_if_output_is_volatile("/tmp/qualquer")
+    assert capsys.readouterr().out == ""
+
+
+def test_volatile_output_warning_fires_for_content_paths(monkeypatch, capsys):
+    """No Colab, gravar em /content/ significa perder o treino quando a
+    máquina é reciclada — o usuário precisa saber ANTES de gastar a GPU."""
+    import pathlib
+
+    from finetuning import train as train_mod
+
+    real_is_dir = pathlib.Path.is_dir
+    monkeypatch.setattr(
+        pathlib.Path,
+        "is_dir",
+        lambda self: True if str(self) == "/content" else real_is_dir(self),
+    )
+
+    train_mod.warn_if_output_is_volatile("/content/repo/finetuning/adapters/x")
+    out = capsys.readouterr().out
+    assert "[aviso]" in out
+    assert "drive.mount" in out
+
+
+def test_drive_output_is_reported_as_persistent(monkeypatch, capsys):
+    import pathlib
+
+    from finetuning import train as train_mod
+
+    real_is_dir = pathlib.Path.is_dir
+    monkeypatch.setattr(
+        pathlib.Path,
+        "is_dir",
+        lambda self: True if str(self) == "/content" else real_is_dir(self),
+    )
+
+    train_mod.warn_if_output_is_volatile("/content/drive/MyDrive/tc3/adapters")
+    out = capsys.readouterr().out
+    assert "[aviso]" not in out
+    assert "persiste" in out

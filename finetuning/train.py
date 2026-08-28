@@ -233,6 +233,38 @@ def resolve_compute_dtype(configured: str):
     return getattr(torch, configured)
 
 
+def warn_if_output_is_volatile(output_dir: str | Path) -> None:
+    """Avisa quando o destino do treino é perdido ao fim da sessão.
+
+    No Colab, `/content/` é apagado quando a máquina é reciclada — o que
+    acontece por inatividade ou limite de uso, sem aviso. Um treino de 30
+    minutos gravado ali desaparece por inteiro. Como o script não pode
+    impedir a escolha, ao menos torna a consequência visível antes de a GPU
+    ser gasta.
+    """
+    path = Path(output_dir).resolve()
+
+    in_colab = Path("/content").is_dir()
+    if not in_colab:
+        return
+
+    persistent_roots = (Path("/content/drive"), Path("/content/gdrive"))
+    if any(root in path.parents or root == path for root in persistent_roots):
+        print(f"[saída] {path} (Google Drive — persiste entre sessões)")
+        return
+
+    if Path("/content") in path.parents:
+        print(
+            f"[aviso] O treino vai gravar em {path}, dentro de /content/, que é "
+            "APAGADO quando a máquina do Colab é reciclada.\n"
+            "        Se a sessão cair, o treino inteiro se perde e nem "
+            "--resume ajuda.\n"
+            "        Para gravar em local persistente:\n"
+            "          from google.colab import drive; drive.mount('/content/drive')\n"
+            "          --output-dir /content/drive/MyDrive/<pasta>/medical-assistant-lora"
+        )
+
+
 def _report_training_plan(config: TrainingConfig, n_train: int) -> None:
     """Imprime o plano de treino e alerta se ele for curto demais para
     produzir um modelo mensuravelmente diferente do base."""
@@ -326,6 +358,7 @@ def run_training(
 
     if not smoke_test:
         check_accelerator()
+        warn_if_output_is_volatile(config.output_dir)
         _report_training_plan(config, len(train_records))
 
     if smoke_test:
