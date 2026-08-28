@@ -192,3 +192,51 @@ def test_each_interaction_appends_one_line(assistant, log_path):
 def test_session_id_is_preserved_when_provided(assistant, log_path):
     assistant.run("Qual a conduta para hipertensão?", session_id="sess-fixa-123")
     assert read_audit_log(log_path)[0]["session_id"] == "sess-fixa-123"
+
+
+# --------------------------------------------------------------------------
+# Comparação entre backends
+# --------------------------------------------------------------------------
+
+
+def test_comparison_gives_both_backends_identical_context(retriever, db_path, tmp_path):
+    """O ponto da comparação: os backends precisam receber exatamente o mesmo
+    contexto recuperado, senão a diferença observada não é atribuível ao
+    modelo."""
+    from assistant.compare_backends import compare
+
+    comparisons = compare(
+        backends=["template", "template"],
+        cases=[("PAC-0003", "Qual a conduta?")],
+        db_path=db_path,
+        protocols_dir="data/protocols",
+        log_path=tmp_path / "cmp.jsonl",
+        base_model="irrelevante-para-o-stub",
+        adapter_dir=None,
+    )
+
+    assert len(comparisons) == 1
+    case = comparisons[0]
+    assert case.contexto_protocolos
+    assert len(case.respostas) == 2
+
+
+def test_comparison_writes_markdown_with_both_answers(retriever, db_path, tmp_path):
+    from assistant.compare_backends import compare, write_markdown
+
+    comparisons = compare(
+        backends=["template", "template"],
+        cases=[(None, "Quais critérios do qSOFA indicam sepse?")],
+        db_path=db_path,
+        protocols_dir="data/protocols",
+        log_path=tmp_path / "cmp.jsonl",
+        base_model="x",
+        adapter_dir=None,
+    )
+    out = tmp_path / "comparacao.md"
+    write_markdown(comparisons, out)
+
+    text = out.read_text(encoding="utf-8")
+    assert "qSOFA" in text
+    assert text.count("### `template`") == 2
+    assert "mesmo contexto recuperado" in text

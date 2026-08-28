@@ -72,6 +72,11 @@ def main() -> None:
         "--backend", default="template", choices=["template", "base", "finetuned"]
     )
     parser.add_argument(
+        "--base-model",
+        default="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        help="Modelo base (usado com --backend base ou finetuned).",
+    )
+    parser.add_argument(
         "--adapter-dir",
         default="finetuning/adapters/medical-assistant-lora",
         help="Diretório dos adapters LoRA (usado com --backend finetuned). "
@@ -98,7 +103,11 @@ def main() -> None:
 
     # adapter_dir só faz sentido para o backend com fine-tuning; passá-lo aos
     # demais quebraria a construção da LLM.
-    llm_kwargs = {"adapter_dir": args.adapter_dir} if args.backend == "finetuned" else {}
+    llm_kwargs: dict = {}
+    if args.backend in {"base", "finetuned"}:
+        llm_kwargs["base_model"] = args.base_model
+    if args.backend == "finetuned":
+        llm_kwargs["adapter_dir"] = args.adapter_dir
 
     flow = build_clinical_flow(
         backend=args.backend,

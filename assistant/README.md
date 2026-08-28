@@ -12,6 +12,7 @@ Implementa a Etapa 3 do Tech Challenge: o assistente médico com LangChain.
 | `chains.py` | Chain principal que orquestra tudo. | 3, 4, 5 |
 | `cli.py` | Interface de linha de comando. | — |
 | `evaluate_rag.py` | Benchmark de recuperação (top-1 / recall@k). | — |
+| `compare_backends.py` | Compara o assistente completo com modelo base vs. fine-tuned. | — |
 
 ## Uso
 
@@ -66,6 +67,34 @@ O texto exibido ao usuário continua sendo apenas o corpo do protocolo.
 **Embeddings TF-IDF por padrão.** Determinísticos, sem GPU e sem download de
 modelo — o RAG roda e é testável offline. `load_huggingface_embeddings()`
 oferece embeddings densos para produção (requer rede na primeira execução).
+
+## Comparando modelo base e fine-tuned no assistente completo
+
+```bash
+python -m assistant.compare_backends \
+    --paciente PAC-0003 \
+    --pergunta "Qual a conduta para este paciente?" \
+    --adapter-dir finetuning/adapters/medical-assistant-lora
+```
+
+Sem `--pergunta`, roda um conjunto padrão de casos que cobre os três caminhos
+do grafo e as perguntas de limiar numérico (HbA1c, qSOFA), onde a alucionação
+do modelo aparece.
+
+Isso é diferente de `finetuning/evaluate.py`, que compara os modelos **crus**,
+recebendo só a pergunta. Aqui a comparação passa por toda a pilha — RAG,
+prontuário, guardrails, explainability — e os dois backends recebem
+**exatamente o mesmo contexto recuperado** (um único `ProtocolRetriever` é
+compartilhado, e o script avisa se o contexto divergir). A diferença observada
+é só o que cada modelo faz com esse contexto.
+
+É a pergunta que de fato importa aqui: **com o texto do protocolo entregue no
+contexto, o modelo base já resolve?** Se sim, o fine-tuning agrega pouco; se
+não, ele se justifica. A resposta vai para `docs/comparacao_backends.md`, em
+formato pronto para o relatório.
+
+Os modelos são carregados em sequência e liberados após o uso, então o par não
+precisa caber na memória ao mesmo tempo.
 
 ## Qualidade da recuperação
 
