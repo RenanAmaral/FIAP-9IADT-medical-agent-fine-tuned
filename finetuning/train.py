@@ -199,11 +199,21 @@ def check_accelerator() -> None:
 
 
 def _supports_bf16() -> bool:
-    """`True` se a GPU tem suporte nativo a bfloat16 (Ampere/Ada em diante)."""
+    """`True` se a GPU tem suporte **nativo** a bfloat16.
+
+    Usamos a capacidade de computação (>= 8.0, ou seja Ampere/Ada em diante)
+    em vez de `torch.cuda.is_bf16_supported()`: esta última inclui emulação
+    por padrão e retorna `True` na T4 (Turing, 7.5), onde bf16 não existe em
+    hardware. Confiar nela faria o QLoRA rodar emulado — mais lento, sem
+    ganho — e ainda imprimiria "bf16 nativo: True" numa GPU que não o tem.
+    """
     try:
         import torch
 
-        return bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported())
+        if not torch.cuda.is_available():
+            return False
+        major, _minor = torch.cuda.get_device_capability()
+        return major >= 8
     except Exception:
         return False
 
