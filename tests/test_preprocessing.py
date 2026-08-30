@@ -72,3 +72,50 @@ def test_split_dataset_covers_all_records_without_overlap():
     assert sorted(all_ids) == list(range(30))
     assert len(splits["val"]) > 0
     assert len(splits["test"]) > 0
+
+
+def test_birth_dates_do_not_depend_on_system_clock():
+    """Faker.date_of_birth calcula a idade a partir de "hoje", então o mesmo
+    seed produzia datas diferentes conforme os dias passavam — o dataset
+    deixava de ser reprodutível apesar do seed fixo."""
+    import datetime
+    from unittest import mock
+
+    from faker import Faker
+
+    from preprocessing.generate_synthetic_data import build_hospital_records
+
+    def gerar():
+        rng = random.Random(42)
+        fake = Faker("pt_BR")
+        Faker.seed(42)
+        return [r["_pii_ground_truth"]["nascimento"] for r in build_hospital_records(fake, rng)]
+
+    agora = gerar()
+
+    real_date = datetime.date
+
+    class DataFutura(real_date):
+        @classmethod
+        def today(cls):
+            return real_date(2030, 1, 1)
+
+    with mock.patch("datetime.date", DataFutura):
+        depois = gerar()
+
+    assert agora == depois
+
+
+def test_birth_dates_respect_age_bounds():
+    from preprocessing.generate_synthetic_data import (
+        MAX_AGE_YEARS,
+        MIN_AGE_YEARS,
+        REFERENCE_DATE,
+        _random_birth_date,
+    )
+
+    rng = random.Random(7)
+    for _ in range(200):
+        nascimento = _random_birth_date(rng)
+        idade_anos = (REFERENCE_DATE - nascimento).days / 365
+        assert MIN_AGE_YEARS <= idade_anos <= MAX_AGE_YEARS

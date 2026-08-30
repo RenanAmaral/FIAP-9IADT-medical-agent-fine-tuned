@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+from datetime import date, timedelta
 from pathlib import Path
 
 from faker import Faker
@@ -30,6 +31,26 @@ QUESTION_TEMPLATES = [
 # Ruído típico de fontes internas (OCR, copiar/colar de sistemas legados) usado
 # deliberadamente para o preprocessing.clean remover na Etapa 1.
 NOISE_SNIPPETS = ["  ", "\t", "***", "<<confidencial>>", "​", "  \n\n  "]
+
+
+#: Data de referência do hospital simulado. Fixa de propósito: as idades dos
+#: pacientes são calculadas a partir daqui, e não de "hoje".
+REFERENCE_DATE = date(2026, 8, 25)
+
+MIN_AGE_YEARS = 1
+MAX_AGE_YEARS = 95
+
+
+def _random_birth_date(rng: random.Random) -> date:
+    """Data de nascimento determinística, ancorada em `REFERENCE_DATE`.
+
+    Não usamos `Faker.date_of_birth`: ele calcula a idade a partir da data
+    atual do sistema, então o mesmo seed produz datas diferentes conforme os
+    dias passam — o dataset deixava de ser reprodutível de um dia para o
+    outro, apesar do seed fixo.
+    """
+    dias = rng.randint(MIN_AGE_YEARS * 365, MAX_AGE_YEARS * 365)
+    return REFERENCE_DATE - timedelta(days=dias)
 
 
 def _inject_noise(text: str, rng: random.Random) -> str:
@@ -86,7 +107,7 @@ def build_hospital_records(fake: Faker, rng: random.Random, n_records: int = 80)
         rg = fake.rg()
         telefone = fake.phone_number()
         endereco = fake.address().replace("\n", ", ")
-        nascimento = fake.date_of_birth(minimum_age=1, maximum_age=95).strftime("%d/%m/%Y")
+        nascimento = _random_birth_date(rng).strftime("%d/%m/%Y")
         prontuario = f"PRT-{rng.randint(100000, 999999)}"
         condicao = rng.choice(protocol["condicoes"])
 
