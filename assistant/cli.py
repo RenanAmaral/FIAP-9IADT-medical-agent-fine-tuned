@@ -73,6 +73,13 @@ def main() -> None:
         help="Modelo base (usado com --backend base ou finetuned).",
     )
     parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=512,
+        help="Tamanho máximo da resposta gerada. Em CPU, 512 tokens levam "
+        "minutos; reduza para ~200 se estiver rodando sem GPU.",
+    )
+    parser.add_argument(
         "--adapter-dir",
         default="finetuning/adapters/medical-assistant-lora",
         help="Diretório dos adapters LoRA (usado com --backend finetuned). "
@@ -104,6 +111,7 @@ def main() -> None:
     llm_kwargs: dict = {}
     if args.backend in {"base", "finetuned"}:
         llm_kwargs["base_model"] = args.base_model
+        llm_kwargs["max_new_tokens"] = args.max_new_tokens
     if args.backend == "finetuned":
         llm_kwargs["adapter_dir"] = args.adapter_dir
 

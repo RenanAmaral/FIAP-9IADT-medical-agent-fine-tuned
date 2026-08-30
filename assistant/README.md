@@ -28,6 +28,35 @@ python -m assistant.cli --interativo --paciente PAC-0001
 
 Para o fluxo clínico completo com o grafo de decisão, use `python -m graphs.cli`.
 
+## Rodando localmente, sem GPU
+
+A inferência **não usa `bitsandbytes`** (a quantização em 4 bits é só do
+treino) e cai automaticamente para `float32` quando não há CUDA. Então o
+assistente roda numa máquina comum, inclusive com o modelo fine-tuned.
+
+O que roda **sem modelo nenhum** — instantâneo, só dependências leves:
+
+```bash
+python -m preprocessing.run_pipeline    # pipeline de dados e anonimização
+python -m assistant.evaluate_rag        # benchmark de recuperação
+python -m graphs.cli --demo             # os três caminhos do grafo
+python -m security.inspect_logs         # auditoria
+pytest -q                               # a suíte de testes
+```
+
+O que precisa do modelo (`--backend base` ou `finetuned`): baixe os adapters
+do Drive para `finetuning/adapters/medical-assistant-lora/` e instale
+`torch`, `transformers`, `peft` e `accelerate`. Na primeira execução o modelo
+base (~2,2 GB) é baixado da Hugging Face.
+
+**Reduza o tamanho da resposta em CPU.** Com os 512 tokens padrão, uma
+resposta leva de um a três minutos numa CPU típica:
+
+```bash
+python -m graphs.cli --backend finetuned --max-new-tokens 200 \
+    --paciente PAC-0003 --pergunta "Qual a conduta para este paciente?"
+```
+
 ## Backends de LLM (`--backend`)
 
 - `template` (padrão) — **não é um modelo de linguagem**. Stub determinístico
