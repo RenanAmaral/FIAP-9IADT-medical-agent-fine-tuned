@@ -214,6 +214,12 @@ fluxo continua — apenas com o aviso e sujeito ao limite de taxa.
 Um notebook pronto com essas células está em
 `finetuning/notebooks/colab_finetune.ipynb`.
 
+Para **gravar o vídeo de entrega** há um segundo notebook,
+`finetuning/notebooks/colab_demo.ipynb`: ele separa as células de preparação
+(rodar antes de gravar) das de demonstração, e carrega o modelo **uma única
+vez** em memória. Isso evita o minuto de carregamento que aconteceria a cada
+`!python -m ...`, já que cada comando de shell é um processo novo.
+
 ### Atualizando um notebook já aberto no Colab
 
 São **duas** coisas independentes, e confundi-las é a causa mais comum de
